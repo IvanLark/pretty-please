@@ -1,0 +1,27 @@
+{
+  "name": "pretty-please",
+  "version": "1.0.0",
+  "description": "AI 驱动的命令行工具，将自然语言转换为可执行的 Shell 命令",
+  "type": "module",
+  "bin": {
+    "pls": "./bin/pls.js",
+    "please": "./bin/pls.js"
+  },
+  "scripts": {
+    "start": "node bin/pls.js"
+  },
+  "keywords": [
+    "cli",
+    "ai",
+    "shell",
+    "openai",
+    "command-line"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^5.6.2",
+    "commander": "^14.0.2",
+    "openai": "^6.10.0"
+  }
+}
