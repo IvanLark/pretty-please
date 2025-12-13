@@ -10,8 +10,12 @@ const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 const DEFAULT_CONFIG = {
   apiKey: '',
   baseUrl: 'https://api.openai.com/v1',
-  model: 'gpt-4-turbo'
+  model: 'gpt-4-turbo',
+  shellHook: false  // 是否启用 shell hook 记录终端命令
 };
+
+// 导出配置目录路径
+export { CONFIG_DIR };
 
 /**
  * 确保配置目录存在
@@ -56,7 +60,12 @@ export function setConfigValue(key, value) {
   if (!(key in DEFAULT_CONFIG)) {
     throw new Error(`未知的配置项: ${key}`);
   }
-  config[key] = value;
+  // 处理 boolean 类型
+  if (key === 'shellHook') {
+    config[key] = value === 'true' || value === true;
+  } else {
+    config[key] = value;
+  }
   saveConfig(config);
   return config;
 }
@@ -84,9 +93,10 @@ export function displayConfig() {
   const config = getConfig();
   console.log(chalk.bold('\n当前配置:'));
   console.log(chalk.gray('━'.repeat(40)));
-  console.log(`  ${chalk.cyan('apiKey')}:  ${maskApiKey(config.apiKey)}`);
-  console.log(`  ${chalk.cyan('baseUrl')}: ${config.baseUrl}`);
-  console.log(`  ${chalk.cyan('model')}:   ${config.model}`);
+  console.log(`  ${chalk.cyan('apiKey')}:    ${maskApiKey(config.apiKey)}`);
+  console.log(`  ${chalk.cyan('baseUrl')}:   ${config.baseUrl}`);
+  console.log(`  ${chalk.cyan('model')}:     ${config.model}`);
+  console.log(`  ${chalk.cyan('shellHook')}: ${config.shellHook ? chalk.green('已启用') : chalk.gray('未启用')}`);
   console.log(chalk.gray('━'.repeat(40)));
   console.log(chalk.gray(`配置文件: ${CONFIG_FILE}\n`));
 }

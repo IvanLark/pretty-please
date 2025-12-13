@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { getConfig } from './config.js';
 import { formatSystemInfo } from './sysinfo.js';
 import { formatHistoryForAI } from './history.js';
+import { formatShellHistoryForAI } from './shell-hook.js';
 
 /**
  * 创建 OpenAI 客户端
@@ -18,7 +19,7 @@ function createClient() {
 /**
  * 生成系统提示词
  */
-function buildSystemPrompt(sysinfo, history) {
+function buildSystemPrompt(sysinfo, plsHistory, shellHistory) {
   let prompt = `你是一个专业的 shell 脚本生成器。用户会提供他们的系统信息和一个命令需求。
 你的任务是返回一个可执行的、原始的 shell 命令或脚本来完成他们的目标。
 
@@ -31,8 +32,14 @@ function buildSystemPrompt(sysinfo, history) {
 
 用户的系统信息：${sysinfo}`;
 
-  if (history) {
-    prompt += `\n\n${history}`;
+  // 添加 shell 终端历史（如果有）
+  if (shellHistory) {
+    prompt += `\n\n${shellHistory}`;
+  }
+
+  // 添加 pls 命令历史（如果有）
+  if (plsHistory) {
+    prompt += `\n\n${plsHistory}`;
   }
 
   return prompt;
@@ -48,8 +55,9 @@ export async function generateCommand(prompt, options = {}) {
   const config = getConfig();
   const client = createClient();
   const sysinfo = formatSystemInfo();
-  const history = formatHistoryForAI();
-  const systemPrompt = buildSystemPrompt(sysinfo, history);
+  const plsHistory = formatHistoryForAI();
+  const shellHistory = formatShellHistoryForAI();
+  const systemPrompt = buildSystemPrompt(sysinfo, plsHistory, shellHistory);
 
   const response = await client.chat.completions.create({
     model: config.model,

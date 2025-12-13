@@ -22,6 +22,12 @@ import {
   clearHistory,
   getHistoryFilePath
 } from '../src/history.js';
+import {
+  installShellHook,
+  uninstallShellHook,
+  getHookStatus,
+  detectShell
+} from '../src/shell-hook.js';
 
 // 获取 package.json 版本
 const __filename = fileURLToPath(import.meta.url);
@@ -278,6 +284,81 @@ historyCmd
     console.log(chalk.gray(`历史文件: ${getHistoryFilePath()}\n`));
   });
 
+// hook 子命令 - 安装/卸载 shell hook
+const hookCmd = program
+  .command('hook')
+  .description('管理 shell hook（增强功能：记录终端命令历史）');
+
+hookCmd
+  .command('install')
+  .description('安装 shell hook')
+  .action(async () => {
+    const status = getHookStatus();
+    console.log(chalk.bold('\n🔧 Shell Hook 安装向导'));
+    console.log(chalk.gray('━'.repeat(40)));
+    console.log(chalk.gray(`检测到 Shell: ${status.shellType}`));
+    console.log(chalk.gray(`配置文件: ${status.configPath || '未知'}`));
+    console.log();
+
+    if (status.shellType === 'unknown') {
+      console.log(chalk.red('❌ 不支持的 shell 类型'));
+      console.log(chalk.gray('支持的 shell: zsh, bash, powershell'));
+      return;
+    }
+
+    console.log(chalk.yellow('此功能会在你的 shell 配置文件中添加 hook，'));
+    console.log(chalk.yellow('用于记录你在终端执行的每条命令，让 AI 更智能。'));
+    console.log();
+
+    await installShellHook();
+  });
+
+hookCmd
+  .command('uninstall')
+  .description('卸载 shell hook')
+  .action(() => {
+    uninstallShellHook();
+  });
+
+hookCmd
+  .command('status')
+  .description('查看 shell hook 状态')
+  .action(() => {
+    const status = getHookStatus();
+    console.log(chalk.bold('\n📊 Shell Hook 状态'));
+    console.log(chalk.gray('━'.repeat(40)));
+    console.log(`  ${chalk.cyan('Shell 类型')}: ${status.shellType}`);
+    console.log(`  ${chalk.cyan('配置文件')}:   ${status.configPath || '未知'}`);
+    console.log(`  ${chalk.cyan('已安装')}:     ${status.installed ? chalk.green('是') : chalk.gray('否')}`);
+    console.log(`  ${chalk.cyan('已启用')}:     ${status.enabled ? chalk.green('是') : chalk.gray('否')}`);
+    console.log(`  ${chalk.cyan('历史文件')}:   ${status.historyFile}`);
+    console.log(chalk.gray('━'.repeat(40)));
+
+    if (!status.installed) {
+      console.log(chalk.gray('\n提示: 运行 ') + chalk.cyan('pls hook install') + chalk.gray(' 安装 shell hook'));
+    }
+    console.log();
+  });
+
+// 默认 hook 命令（显示状态）
+hookCmd
+  .action(() => {
+    const status = getHookStatus();
+    console.log(chalk.bold('\n📊 Shell Hook 状态'));
+    console.log(chalk.gray('━'.repeat(40)));
+    console.log(`  ${chalk.cyan('Shell 类型')}: ${status.shellType}`);
+    console.log(`  ${chalk.cyan('配置文件')}:   ${status.configPath || '未知'}`);
+    console.log(`  ${chalk.cyan('已安装')}:     ${status.installed ? chalk.green('是') : chalk.gray('否')}`);
+    console.log(`  ${chalk.cyan('已启用')}:     ${status.enabled ? chalk.green('是') : chalk.gray('否')}`);
+    console.log(chalk.gray('━'.repeat(40)));
+
+    if (!status.installed) {
+      console.log(chalk.gray('\n提示: 运行 ') + chalk.cyan('pls hook install') + chalk.gray(' 安装 shell hook'));
+      console.log(chalk.gray('      运行 ') + chalk.cyan('pls hook uninstall') + chalk.gray(' 卸载 shell hook'));
+    }
+    console.log();
+  });
+
 // 默认命令（执行 prompt）
 program
   .argument('[prompt...]', '自然语言描述你想执行的操作')
@@ -298,11 +379,13 @@ ${chalk.bold('示例:')}
   ${chalk.cyan('pls 查找大于 100MB 的文件')}        查找大文件
   ${chalk.cyan('pls 删除刚才创建的文件')}          AI 会参考历史记录
   ${chalk.cyan('pls --debug 压缩 logs 目录')}      显示调试信息
-  ${chalk.cyan('pls history')}                    查看命令历史
+  ${chalk.cyan('pls history')}                    查看 pls 命令历史
   ${chalk.cyan('pls history clear')}              清空历史记录
+  ${chalk.cyan('pls hook')}                       查看 shell hook 状态
+  ${chalk.cyan('pls hook install')}               安装 shell hook（增强功能）
+  ${chalk.cyan('pls hook uninstall')}             卸载 shell hook
   ${chalk.cyan('pls config')}                     交互式配置
   ${chalk.cyan('pls config get')}                 查看当前配置
-  ${chalk.cyan('pls config set apiKey sk-xxx')}   设置 API Key
 `);
 
 program.parse();
