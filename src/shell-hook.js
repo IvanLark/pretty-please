@@ -3,6 +3,7 @@ import path from 'path';
 import os from 'os';
 import chalk from 'chalk';
 import { CONFIG_DIR, getConfig, setConfigValue } from './config.js';
+import { getHistory } from './history.js';
 
 const SHELL_HISTORY_FILE = path.join(CONFIG_DIR, 'shell_history.jsonl');
 const MAX_SHELL_HISTORY = 20;
@@ -285,7 +286,34 @@ export function getShellHistory() {
 }
 
 /**
+ * 从 pls history 中查找匹配的记录
+ * @param {string} prompt - pls 命令后面的 prompt 部分
+ * @returns {object|null} 匹配的 pls history 记录
+ */
+function findPlsHistoryMatch(prompt) {
+  const plsHistory = getHistory();
+
+  // 尝试精确匹配 userPrompt
+  for (const record of plsHistory) {
+    if (record.userPrompt === prompt) {
+      return record;
+    }
+  }
+
+  // 尝试模糊匹配（处理引号等情况）
+  const normalizedPrompt = prompt.trim().replace(/^["']|["']$/g, '');
+  for (const record of plsHistory) {
+    if (record.userPrompt === normalizedPrompt) {
+      return record;
+    }
+  }
+
+  return null;
+}
+
+/**
  * 格式化 shell 历史供 AI 使用
+ * 对于 pls 命令，会从 pls history 中查找对应的详细信息
  */
 export function formatShellHistoryForAI() {
   const history = getShellHistory();
@@ -294,8 +322,45 @@ export function formatShellHistoryForAI() {
     return '';
   }
 
+  // pls 的子命令列表（这些不是 AI prompt）
+  const plsSubcommands = ['config', 'history', 'hook', 'help', '--help', '-h', '--version', '-v'];
+
   const lines = history.map((item, index) => {
     const status = item.exit === 0 ? '✓' : `✗ 退出码:${item.exit}`;
+
+    // 检查是否是 pls 命令
+    const plsMatch = item.cmd.match(/^(pls|please)\s+(.+)$/);
+    if (plsMatch) {
+      let args = plsMatch[2];
+
+      // 去掉 --debug / -d 选项，获取真正的参数
+      args = args.replace(/^(--debug|-d)\s+/, '');
+
+      const firstArg = args.split(/\s+/)[0];
+
+      // 如果是子命令，当作普通命令处理
+      if (plsSubcommands.includes(firstArg)) {
+        return `${index + 1}. ${item.cmd} ${status}`;
+      }
+
+      // 是 AI prompt，尝试从 pls history 查找详细信息
+      const prompt = args;
+      const plsRecord = findPlsHistoryMatch(prompt);
+
+      if (plsRecord) {
+        // 找到对应的 pls 记录，展示详细信息
+        if (plsRecord.executed) {
+          const execStatus = plsRecord.exitCode === 0 ? '✓' : `✗ 退出码:${plsRecord.exitCode}`;
+          return `${index + 1}. [pls] "${prompt}" → 实际执行: ${plsRecord.command} ${execStatus}`;
+        } else {
+          return `${index + 1}. [pls] "${prompt}" → 生成命令: ${plsRecord.command} (用户取消执行)`;
+        }
+      }
+      // 找不到记录，只显示原始命令
+      return `${index + 1}. [pls] "${prompt}" ${status}`;
+    }
+
+    // 普通命令
     return `${index + 1}. ${item.cmd} ${status}`;
   });
 
