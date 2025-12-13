@@ -16,12 +16,18 @@ import {
   runConfigWizard
 } from '../src/config.js';
 import { generateCommand } from '../src/ai.js';
+import { chatWithAI } from '../src/ai.js';
 import {
   addHistory,
   getHistory,
   clearHistory,
   getHistoryFilePath
 } from '../src/history.js';
+import {
+  clearChatHistory,
+  getChatRoundCount,
+  getChatHistoryFilePath
+} from '../src/chat-history.js';
 import {
   installShellHook,
   uninstallShellHook,
@@ -516,6 +522,104 @@ hookCmd
     console.log();
   });
 
+// chat 子命令 - AI 对话模式
+const chatCmd = program
+  .command('chat')
+  .description('AI 对话模式，问答、讲解命令');
+
+chatCmd
+  .command('clear')
+  .description('清空对话历史')
+  .action(() => {
+    clearChatHistory();
+    console.log(chalk.green('✅ 对话历史已清空'));
+  });
+
+// 默认 chat 命令（进行对话）
+chatCmd
+  .argument('[prompt...]', '你的问题')
+  .option('-d, --debug', '显示调试信息')
+  .action(async (promptArgs, options) => {
+    const prompt = promptArgs.join(' ');
+
+    if (!prompt.trim()) {
+      // 没有输入，显示对话状态
+      const roundCount = getChatRoundCount();
+      console.log(chalk.bold('\n💬 AI 对话模式'));
+      console.log(chalk.gray('━'.repeat(40)));
+      console.log(`  ${chalk.cyan('当前对话轮数')}: ${roundCount}`);
+      console.log(`  ${chalk.cyan('历史文件')}:     ${getChatHistoryFilePath()}`);
+      console.log(chalk.gray('━'.repeat(40)));
+      console.log(chalk.gray('\n用法:'));
+      console.log(chalk.cyan('  pls chat <问题>') + chalk.gray('    与 AI 对话'));
+      console.log(chalk.cyan('  pls chat clear') + chalk.gray('     清空对话历史'));
+      console.log();
+      return;
+    }
+
+    // 检查配置
+    if (!isConfigValid()) {
+      console.log(chalk.yellow('\n⚠️  检测到尚未配置 API Key'));
+      console.log(chalk.gray('请运行 ') + chalk.cyan('pls config') + chalk.gray(' 进行配置\n'));
+      process.exit(1);
+    }
+
+    try {
+      // 显示对话轮数
+      const roundCount = getChatRoundCount();
+      if (roundCount > 0) {
+        console.log(chalk.gray(`(对话轮数: ${roundCount})`));
+      }
+
+      // 思考中 spinner
+      const spinner = ora({
+        text: '思考中...',
+        spinner: 'dots'
+      }).start();
+
+      const startTime = Date.now();
+      let firstChunk = true;
+
+      // 流式输出回调 - 逐字符输出原始 markdown
+      const onChunk = (content) => {
+        if (firstChunk) {
+          // 第一个 chunk 到来，清理 spinner
+          spinner.stop();
+          process.stdout.write('\r\x1b[K'); // 清除当前行
+          firstChunk = false;
+        }
+        // 直接输出原始内容（逐字符）
+        process.stdout.write(content);
+      };
+
+      const result = await chatWithAI(prompt, {
+        debug: options.debug,
+        onChunk
+      });
+      const duration = Date.now() - startTime;
+
+      // 输出完成后换行
+      console.log();
+      console.log(chalk.gray(`(${formatDuration(duration)})`));
+
+      // 调试模式下显示调试信息
+      if (options.debug) {
+        console.log(chalk.magenta('\n━━━ 调试信息 ━━━'));
+        console.log(chalk.gray('系统信息: ') + result.debug.sysinfo);
+        console.log(chalk.gray('模型: ') + result.debug.model);
+        console.log(chalk.gray('对话历史轮数: ') + Math.floor(result.debug.chatHistory.length / 2));
+        console.log(chalk.gray('System Prompt:'));
+        console.log(chalk.dim(result.debug.systemPrompt));
+        console.log(chalk.gray('User Prompt: ') + result.debug.userPrompt);
+        console.log(chalk.magenta('━'.repeat(16)));
+      }
+
+    } catch (error) {
+      console.error(chalk.red('\n❌ 错误: ') + error.message);
+      process.exit(1);
+    }
+  });
+
 // 默认命令（执行 prompt）
 program
   .argument('[prompt...]', '自然语言描述你想执行的操作')
@@ -536,6 +640,8 @@ ${chalk.bold('示例:')}
   ${chalk.cyan('pls 查找大于 100MB 的文件')}        查找大文件
   ${chalk.cyan('pls 删除刚才创建的文件')}          AI 会参考历史记录
   ${chalk.cyan('pls --debug 压缩 logs 目录')}      显示调试信息
+  ${chalk.cyan('pls chat tar 命令怎么用')}         AI 对话模式
+  ${chalk.cyan('pls chat clear')}                 清空对话历史
   ${chalk.cyan('pls history')}                    查看 pls 命令历史
   ${chalk.cyan('pls history clear')}              清空历史记录
   ${chalk.cyan('pls hook')}                       查看 shell hook 状态

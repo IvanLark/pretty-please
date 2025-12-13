@@ -3,6 +3,7 @@ import { getConfig } from './config.js';
 import { formatSystemInfo } from './sysinfo.js';
 import { formatHistoryForAI } from './history.js';
 import { formatShellHistoryForAI, getShellHistory } from './shell-hook.js';
+import { getChatHistory, addChatMessage } from './chat-history.js';
 
 /**
  * 创建 OpenAI 客户端
@@ -104,4 +105,141 @@ export async function generateCommand(prompt, options = {}) {
   }
 
   return command;
+}
+
+/**
+ * 生成 chat 模式的系统提示词
+ * @param {string} sysinfo - 系统信息
+ * @param {string} plsHistory - pls 命令历史
+ * @param {string} shellHistory - shell 终端历史
+ * @param {boolean} shellHookEnabled - 是否启用了 shell hook
+ */
+function buildChatSystemPrompt(sysinfo, plsHistory, shellHistory, shellHookEnabled) {
+  let prompt = `你是一个命令行专家助手，帮助用户理解和使用命令行工具。
+
+【你的能力】
+- 解释命令的含义、参数、用法
+- 分析命令的执行效果和潜在风险
+- 回答命令行、Shell、系统管理相关问题
+- 根据用户需求推荐合适的命令并解释
+
+【回答要求】
+- 简洁清晰，避免冗余
+- 危险操作要明确警告
+- 适当给出示例命令
+- 结合用户的系统环境给出针对性建议
+
+【用户系统信息】
+${sysinfo}`;
+
+  // 根据是否启用 shell hook 决定展示哪个历史
+  if (shellHookEnabled && shellHistory) {
+    prompt += `\n\n${shellHistory}`;
+  } else if (plsHistory) {
+    prompt += `\n\n${plsHistory}`;
+  }
+
+  return prompt;
+}
+
+/**
+ * 调用 AI 进行对话（chat 模式，支持流式输出）
+ * @param {string} prompt 用户输入的问题
+ * @param {object} options 选项
+ * @param {boolean} options.debug 是否返回调试信息
+ * @param {function} options.onChunk 流式输出回调，接收每个文本片段
+ */
+export async function chatWithAI(prompt, options = {}) {
+  const config = getConfig();
+  const client = createClient();
+  const sysinfo = formatSystemInfo();
+  const plsHistory = formatHistoryForAI();
+  const shellHistory = formatShellHistoryForAI();
+  const shellHookEnabled = config.shellHook && getShellHistory().length > 0;
+  const systemPrompt = buildChatSystemPrompt(sysinfo, plsHistory, shellHistory, shellHookEnabled);
+
+  // 获取对话历史
+  const chatHistory = getChatHistory();
+
+  // 构建消息数组
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...chatHistory,
+    { role: 'user', content: prompt }
+  ];
+
+  // 流式输出模式
+  if (options.onChunk) {
+    const stream = await client.chat.completions.create({
+      model: config.model,
+      messages,
+      max_tokens: 2048,
+      temperature: 0.7,
+      stream: true
+    });
+
+    let fullContent = '';
+
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || '';
+      if (content) {
+        fullContent += content;
+        options.onChunk(content);
+      }
+    }
+
+    if (!fullContent) {
+      throw new Error('AI 返回了空的响应');
+    }
+
+    // 保存对话历史
+    addChatMessage(prompt, fullContent);
+
+    if (options.debug) {
+      return {
+        reply: fullContent,
+        debug: {
+          sysinfo,
+          model: config.model,
+          systemPrompt,
+          chatHistory,
+          userPrompt: prompt
+        }
+      };
+    }
+
+    return fullContent;
+  }
+
+  // 非流式模式（保持兼容）
+  const response = await client.chat.completions.create({
+    model: config.model,
+    messages,
+    max_tokens: 2048,
+    temperature: 0.7
+  });
+
+  const reply = response.choices[0]?.message?.content?.trim();
+
+  if (!reply) {
+    throw new Error('AI 返回了空的响应');
+  }
+
+  // 保存对话历史
+  addChatMessage(prompt, reply);
+
+  if (options.debug) {
+    return {
+      reply,
+      debug: {
+        sysinfo,
+        model: config.model,
+        systemPrompt,
+        chatHistory,
+        userPrompt: prompt
+      }
+    };
+  }
+
+  return reply;
 }

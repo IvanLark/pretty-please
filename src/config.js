@@ -11,7 +11,8 @@ const DEFAULT_CONFIG = {
   apiKey: '',
   baseUrl: 'https://api.openai.com/v1',
   model: 'gpt-4-turbo',
-  shellHook: false  // 是否启用 shell hook 记录终端命令
+  shellHook: false,  // 是否启用 shell hook 记录终端命令
+  chatHistoryLimit: 10  // chat 对话历史保留轮数
 };
 
 // 导出配置目录路径
@@ -60,9 +61,15 @@ export function setConfigValue(key, value) {
   if (!(key in DEFAULT_CONFIG)) {
     throw new Error(`未知的配置项: ${key}`);
   }
-  // 处理 boolean 类型
+  // 处理特殊类型
   if (key === 'shellHook') {
     config[key] = value === 'true' || value === true;
+  } else if (key === 'chatHistoryLimit') {
+    const num = parseInt(value, 10);
+    if (isNaN(num) || num < 1) {
+      throw new Error('chatHistoryLimit 必须是大于 0 的整数');
+    }
+    config[key] = num;
   } else {
     config[key] = value;
   }
@@ -93,10 +100,11 @@ export function displayConfig() {
   const config = getConfig();
   console.log(chalk.bold('\n当前配置:'));
   console.log(chalk.gray('━'.repeat(40)));
-  console.log(`  ${chalk.cyan('apiKey')}:    ${maskApiKey(config.apiKey)}`);
-  console.log(`  ${chalk.cyan('baseUrl')}:   ${config.baseUrl}`);
-  console.log(`  ${chalk.cyan('model')}:     ${config.model}`);
-  console.log(`  ${chalk.cyan('shellHook')}: ${config.shellHook ? chalk.green('已启用') : chalk.gray('未启用')}`);
+  console.log(`  ${chalk.cyan('apiKey')}:           ${maskApiKey(config.apiKey)}`);
+  console.log(`  ${chalk.cyan('baseUrl')}:          ${config.baseUrl}`);
+  console.log(`  ${chalk.cyan('model')}:            ${config.model}`);
+  console.log(`  ${chalk.cyan('shellHook')}:        ${config.shellHook ? chalk.green('已启用') : chalk.gray('未启用')}`);
+  console.log(`  ${chalk.cyan('chatHistoryLimit')}: ${config.chatHistoryLimit} 轮`);
   console.log(chalk.gray('━'.repeat(40)));
   console.log(chalk.gray(`配置文件: ${CONFIG_FILE}\n`));
 }
