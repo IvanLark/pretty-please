@@ -349,7 +349,9 @@ export function formatShellHistoryForAI() {
 
       if (plsRecord) {
         // 找到对应的 pls 记录，展示详细信息
-        if (plsRecord.executed) {
+        if (plsRecord.reason === 'builtin') {
+          return `${index + 1}. [pls] "${prompt}" → 生成命令: ${plsRecord.command} (包含 builtin，未执行)`;
+        } else if (plsRecord.executed) {
           const execStatus = plsRecord.exitCode === 0 ? '✓' : `✗ 退出码:${plsRecord.exitCode}`;
           return `${index + 1}. [pls] "${prompt}" → 实际执行: ${plsRecord.command} ${execStatus}`;
         } else {

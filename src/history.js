@@ -86,9 +86,15 @@ export function formatHistoryForAI() {
 
   const lines = history.map((item, index) => {
     const timeAgo = getTimeAgo(item.timestamp);
-    const status = item.executed
-      ? (item.exitCode === 0 ? '✓' : `✗ 退出码:${item.exitCode}`)
-      : '(未执行)';
+
+    let status;
+    if (item.executed) {
+      status = item.exitCode === 0 ? '✓' : `✗ 退出码:${item.exitCode}`;
+    } else if (item.reason === 'builtin') {
+      status = '(包含 builtin，未执行)';
+    } else {
+      status = '(用户取消执行)';
+    }
 
     let line = `${index + 1}. [${timeAgo}] "${item.userPrompt}" → ${item.command} ${status}`;
 

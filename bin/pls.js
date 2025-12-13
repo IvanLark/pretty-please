@@ -2,7 +2,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import readline from 'readline';
+import ora from 'ora';
 import { exec } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -28,6 +28,7 @@ import {
   getHookStatus,
   detectShell
 } from '../src/shell-hook.js';
+import { detectBuiltin, formatBuiltins } from '../src/builtin-detector.js';
 
 // 获取 package.json 版本
 const __filename = fileURLToPath(import.meta.url);
@@ -37,25 +38,106 @@ const packageJson = JSON.parse(fs.readFileSync(join(__dirname, '../package.json'
 const program = new Command();
 
 /**
- * 创建 readline 接口
+ * 计算字符串的显示宽度（中文占2个宽度）
  */
-function createReadlineInterface() {
-  return readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
+function getDisplayWidth(str) {
+  let width = 0;
+  for (const char of str) {
+    // 中文、日文、韩文等宽字符占 2 个宽度
+    if (char.match(/[\u4e00-\u9fff\u3400-\u4dbf\uff00-\uffef\u3000-\u303f]/)) {
+      width += 2;
+    } else {
+      width += 1;
+    }
+  }
+  return width;
 }
 
 /**
- * 询问用户确认
+ * 绘制命令框
+ * @param {string} command - 要显示的命令
+ * @param {string} title - 框框标题
+ */
+function drawCommandBox(command, title = '生成命令') {
+  const lines = command.split('\n');
+  const titleWidth = getDisplayWidth(title);
+  const maxContentWidth = Math.max(...lines.map(l => getDisplayWidth(l)));
+  const boxWidth = Math.max(maxContentWidth + 4, titleWidth + 6, 20);
+
+  // 顶部边框：┌─ 生成命令 ─────┐
+  const topPadding = boxWidth - titleWidth - 5;
+  const topBorder = '┌─ ' + title + ' ' + '─'.repeat(topPadding) + '┐';
+
+  // 底部边框
+  const bottomBorder = '└' + '─'.repeat(boxWidth - 2) + '┘';
+
+  console.log(chalk.yellow(topBorder));
+  for (const line of lines) {
+    const lineWidth = getDisplayWidth(line);
+    const padding = ' '.repeat(boxWidth - lineWidth - 4);
+    console.log(chalk.yellow('│ ') + chalk.cyan(line) + padding + chalk.yellow(' │'));
+  }
+  console.log(chalk.yellow(bottomBorder));
+}
+
+/**
+ * 格式化耗时
+ * @param {number} ms - 毫秒数
+ */
+function formatDuration(ms) {
+  if (ms < 1000) {
+    return `${ms}ms`;
+  }
+  return `${(ms / 1000).toFixed(2)}s`;
+}
+
+/**
+ * 询问用户确认（单键模式）
+ * 回车 = 确认执行，Esc = 取消
  */
 function askConfirmation(prompt) {
   return new Promise((resolve) => {
-    const rl = createReadlineInterface();
-    rl.question(prompt, (answer) => {
-      rl.close();
-      resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes');
-    });
+    process.stdout.write(prompt);
+
+    // 启用原始模式以捕获单个按键
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(true);
+    }
+    process.stdin.resume();
+
+    const onKeyPress = (key) => {
+      // 恢复正常模式
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(false);
+      }
+      process.stdin.pause();
+      process.stdin.removeListener('data', onKeyPress);
+
+      // 换行，让后续输出在新行显示
+      process.stdout.write('\n');
+
+      // 检测按键
+      if (key[0] === 0x0d || key[0] === 0x0a) {
+        // Enter 键 (回车)
+        resolve(true);
+      } else if (key[0] === 0x1b) {
+        // Esc 键
+        resolve(false);
+      } else if (key[0] === 0x03) {
+        // Ctrl+C
+        process.exit(0);
+      } else {
+        // 其他键，忽略，继续等待
+        process.stdout.write(prompt);
+        if (process.stdin.isTTY) {
+          process.stdin.setRawMode(true);
+        }
+        process.stdin.resume();
+        process.stdin.once('data', onKeyPress);
+      }
+    };
+
+    process.stdin.once('data', onKeyPress);
   });
 }
 
@@ -83,6 +165,46 @@ function executeCommand(command) {
     });
 
     child.on('error', (err) => {
+      resolve({ exitCode: 1, output: err.message });
+    });
+  });
+}
+
+/**
+ * 执行命令（配合 spinner 使用）
+ * 先停止 spinner，显示输出，执行完成后再更新 spinner 状态
+ */
+function executeCommandWithSpinner(command, spinner) {
+  return new Promise((resolve) => {
+    let output = '';
+
+    // 停止 spinner 动画，但不改变状态
+    spinner.stop();
+
+    // 输出顶部分隔线
+    console.log(chalk.gray('\n─── 输出 ' + '─'.repeat(30)));
+
+    const child = exec(command, { shell: true });
+
+    child.stdout?.on('data', (data) => {
+      output += data;
+      process.stdout.write(data);
+    });
+
+    child.stderr?.on('data', (data) => {
+      output += data;
+      process.stderr.write(data);
+    });
+
+    child.on('close', (code) => {
+      // 输出底部分隔线
+      console.log(chalk.gray('─'.repeat(38)));
+      resolve({ exitCode: code, output });
+    });
+
+    child.on('error', (err) => {
+      // 输出底部分隔线
+      console.log(chalk.gray('─'.repeat(38)));
       resolve({ exitCode: 1, output: err.message });
     });
   });
@@ -122,31 +244,66 @@ async function runPrompt(promptArgs, options = {}) {
   }
 
   try {
-    console.log(chalk.gray('\n🤔 正在思考...'));
+    // 思考中 spinner
+    const thinkingSpinner = ora({
+      text: '正在思考...',
+      spinner: 'dots'
+    }).start();
 
+    const thinkStartTime = Date.now();
     const result = await generateCommand(prompt, { debug });
+    const thinkDuration = Date.now() - thinkStartTime;
 
     // 根据是否调试模式，解构结果
     const command = debug ? result.command : result;
+
+    thinkingSpinner.succeed(chalk.gray(`思考完成 (${formatDuration(thinkDuration)})`));
 
     // 调试模式下显示调试信息
     if (debug) {
       displayDebugInfo(result.debug);
     }
 
-    // 显示生成的命令
-    console.log(chalk.yellow('\n━━━ AI 生成了以下命令 ━━━'));
-    console.log(chalk.cyan(command));
-    console.log(chalk.yellow('━'.repeat(26)));
+    // 显示生成的命令（框框样式）
+    console.log('');
+    drawCommandBox(command);
+
+    // 检测是否包含 builtin 命令
+    const { hasBuiltin, builtins } = detectBuiltin(command);
+
+    if (hasBuiltin) {
+      // 包含 builtin，不执行，只提示
+      console.log(chalk.red('\n⚠️  此命令包含 shell 内置命令（' + formatBuiltins(builtins) + '），无法在子进程中生效'));
+      console.log(chalk.yellow('💡 请手动复制到终端执行\n'));
+
+      // 记录历史（标记为未执行，原因是 builtin）
+      addHistory({
+        userPrompt: prompt,
+        command,
+        executed: false,
+        exitCode: null,
+        output: '',
+        reason: 'builtin'
+      });
+
+      return;
+    }
 
     // 询问确认
     const confirmed = await askConfirmation(
-      chalk.bold.yellow('是否执行？') + chalk.gray(' [y/N] ')
+      chalk.bold.yellow('执行？') + chalk.gray(' [回车执行 / Esc 取消] ')
     );
 
     if (confirmed) {
-      console.log(chalk.magenta('\n🚀 执行中...\n'));
-      const { exitCode, output } = await executeCommand(command);
+      // 执行中 spinner
+      const execSpinner = ora({
+        text: '执行中...',
+        spinner: 'dots'
+      }).start();
+
+      const execStartTime = Date.now();
+      const { exitCode, output } = await executeCommandWithSpinner(command, execSpinner);
+      const execDuration = Date.now() - execStartTime;
 
       // 记录历史
       addHistory({
@@ -158,9 +315,9 @@ async function runPrompt(promptArgs, options = {}) {
       });
 
       if (exitCode === 0) {
-        console.log(chalk.green('\n✅ 执行完成'));
+        execSpinner.succeed(chalk.green(`执行完成 (${formatDuration(execDuration)})`));
       } else {
-        console.log(chalk.red(`\n❌ 命令执行失败，退出码: ${exitCode}`));
+        execSpinner.fail(chalk.red(`执行失败，退出码: ${exitCode} (${formatDuration(execDuration)})`));
       }
     } else {
       // 记录未执行的历史
