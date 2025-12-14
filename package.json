@@ -1,5 +1,5 @@
 {
-  "name": "pretty-please",
+  "name": "@yivan-lab/pretty-please",
   "version": "1.0.0",
   "description": "AI 驱动的命令行工具，将自然语言转换为可执行的 Shell 命令",
   "type": "module",
@@ -10,17 +10,43 @@
   "scripts": {
     "dev": "tsx bin/pls.tsx",
     "build": "tsc",
-    "start": "node dist/bin/pls.js"
+    "start": "node dist/bin/pls.js",
+    "prepublishOnly": "pnpm build"
   },
   "keywords": [
     "cli",
     "ai",
     "shell",
     "openai",
-    "command-line"
+    "command-line",
+    "natural-language",
+    "terminal",
+    "assistant",
+    "mastra",
+    "deepseek"
   ],
-  "author": "",
+  "author": "yivan-lab",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yivan-lab/pretty-please.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yivan-lab/pretty-please/issues"
+  },
+  "homepage": "https://github.com/yivan-lab/pretty-please#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE",
+    "package.json",
+    "tsconfig.json"
+  ],
   "dependencies": {
     "@mastra/core": "^0.24.8",
     "chalk": "^5.6.2",

@@ -146,35 +146,75 @@ export async function runConfigWizard() {
   const rl = createReadlineInterface();
   const config = getConfig();
 
-  console.log(chalk.bold.magenta('\n🔧 Pretty Please 配置向导'));
-  console.log(chalk.gray('━'.repeat(40)));
+  console.log(chalk.bold.hex('#00D9FF')('\n🔧 Pretty Please 配置向导'));
+  console.log(chalk.gray('━'.repeat(50)));
+  console.log(chalk.gray('直接回车使用默认值，输入值后回车确认\n'));
 
   try {
-    // API Key
-    const currentKeyDisplay = config.apiKey ? ` (当前: ${maskApiKey(config.apiKey)})` : '';
-    const apiKey = await question(rl, chalk.cyan(`请输入 API Key${currentKeyDisplay}: `));
-    if (apiKey.trim()) {
-      config.apiKey = apiKey.trim();
+    // 1. Provider
+    const validProviders = ['openai', 'anthropic', 'deepseek', 'google', 'groq', 'mistral', 'cohere', 'fireworks', 'together'];
+    const providerHint = chalk.gray(`(可选: ${validProviders.join(', ')})`);
+    const providerPrompt = `${chalk.cyan('Provider')} ${providerHint}\n${chalk.gray('默认:')} ${chalk.yellow(config.provider)} ${chalk.gray('→')} `;
+    const provider = await question(rl, providerPrompt);
+    if (provider.trim()) {
+      if (!validProviders.includes(provider.trim())) {
+        console.log(chalk.hex('#EF4444')(`\n✗ 无效的 provider，必须是以下之一: ${validProviders.join(', ')}`));
+        console.log();
+        rl.close();
+        return;
+      }
+      config.provider = provider.trim();
     }
 
-    // Base URL
-    const baseUrl = await question(rl, chalk.cyan(`请输入 API Base URL (回车使用 ${config.baseUrl}): `));
+    // 2. Base URL
+    const baseUrlPrompt = `${chalk.cyan('API Base URL')}\n${chalk.gray('默认:')} ${chalk.yellow(config.baseUrl)} ${chalk.gray('→')} `;
+    const baseUrl = await question(rl, baseUrlPrompt);
     if (baseUrl.trim()) {
       config.baseUrl = baseUrl.trim();
     }
 
-    // Model
-    const model = await question(rl, chalk.cyan(`请输入模型名称 (回车使用 ${config.model}): `));
+    // 3. API Key
+    const currentKeyDisplay = config.apiKey ? maskApiKey(config.apiKey) : '(未设置)';
+    const apiKeyPrompt = `${chalk.cyan('API Key')} ${chalk.gray(`(当前: ${currentKeyDisplay})`)}\n${chalk.gray('→')} `;
+    const apiKey = await question(rl, apiKeyPrompt);
+    if (apiKey.trim()) {
+      config.apiKey = apiKey.trim();
+    }
+
+    // 4. Model
+    const modelPrompt = `${chalk.cyan('Model')}\n${chalk.gray('默认:')} ${chalk.yellow(config.model)} ${chalk.gray('→')} `;
+    const model = await question(rl, modelPrompt);
     if (model.trim()) {
       config.model = model.trim();
     }
 
+    // 5. Shell Hook
+    const shellHookPrompt = `${chalk.cyan('启用 Shell Hook')} ${chalk.gray('(记录终端命令历史)')}\n${chalk.gray('默认:')} ${chalk.yellow(config.shellHook ? 'true' : 'false')} ${chalk.gray('→')} `;
+    const shellHook = await question(rl, shellHookPrompt);
+    if (shellHook.trim()) {
+      config.shellHook = shellHook.trim() === 'true';
+    }
+
+    // 6. Chat History Limit
+    const chatHistoryPrompt = `${chalk.cyan('Chat 历史保留轮数')}\n${chalk.gray('默认:')} ${chalk.yellow(config.chatHistoryLimit)} ${chalk.gray('→')} `;
+    const chatHistoryLimit = await question(rl, chatHistoryPrompt);
+    if (chatHistoryLimit.trim()) {
+      const num = parseInt(chatHistoryLimit.trim(), 10);
+      if (!isNaN(num) && num > 0) {
+        config.chatHistoryLimit = num;
+      }
+    }
+
     saveConfig(config);
 
-    console.log(chalk.gray('━'.repeat(40)));
-    console.log(chalk.green('✅ 配置已保存到 ') + chalk.gray(CONFIG_FILE));
+    console.log('\n' + chalk.gray('━'.repeat(50)));
+    console.log(chalk.hex('#10B981')('✅ 配置已保存'));
+    console.log(chalk.gray(`   ${CONFIG_FILE}`));
     console.log();
 
+  } catch (error) {
+    console.log(chalk.hex('#EF4444')(`\n✗ 配置失败: ${error.message}`));
+    console.log();
   } finally {
     rl.close();
   }

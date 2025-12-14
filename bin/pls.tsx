@@ -86,6 +86,7 @@ const configCmd = program.command('config').description('管理配置')
 
 configCmd
   .command('list')
+  .alias('show')
   .description('查看当前配置')
   .action(() => {
     const config = getConfig()
@@ -110,16 +111,6 @@ configCmd
   })
 
 configCmd
-  .command('show')
-  .description('查看当前配置')
-  .action(() => {
-    const listAction = configCmd.commands.find((c) => c.name() === 'list')
-    if (listAction) {
-      ;(listAction as any)._actionHandler()
-    }
-  })
-
-configCmd
   .command('set <key> <value>')
   .description('设置配置项 (apiKey, baseUrl, provider, model, shellHook, chatHistoryLimit)')
   .action((key, value) => {
@@ -138,11 +129,8 @@ configCmd
 
 // 默认 config 命令（交互式配置）
 configCmd.action(async () => {
-  console.log('')
-  console2.warning('交互式配置向导暂未实现，请使用:')
-  console2.info('  pls config list     - 查看配置')
-  console2.info('  pls config set <key> <value> - 设置配置')
-  console.log('')
+  const { runConfigWizard } = await import('../src/config.js')
+  await runConfigWizard()
 })
 
 // history 子命令
@@ -374,7 +362,7 @@ chatCmd
     if (!isConfigValid()) {
       console.log('')
       console2.warning('⚠️  检测到尚未配置 API Key')
-      console2.muted('请运行 pls config 进行配置')
+      console2.info('请运行 pls config 启动交互式配置向导')
       console.log('')
       process.exit(1)
     }
@@ -414,7 +402,7 @@ program
     if (!isConfigValid()) {
       console.log('')
       console2.warning('⚠️  检测到尚未配置 API Key')
-      console2.muted('请运行 pls config 进行配置')
+      console2.info('请运行 pls config 启动交互式配置向导')
       console.log('')
       process.exit(1)
     }
