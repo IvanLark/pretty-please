@@ -183,33 +183,53 @@ function executeCommand(command) {
 function executeCommandWithSpinner(command, spinner) {
   return new Promise((resolve) => {
     let output = '';
+    let hasOutput = false; // 标记是否有输出
+    let topSeparatorShown = false; // 标记是否已显示顶部分隔线
 
     // 停止 spinner 动画，但不改变状态
     spinner.stop();
-
-    // 输出顶部分隔线
-    console.log(chalk.gray('\n─── 输出 ' + '─'.repeat(30)));
 
     const child = exec(command, { shell: true });
 
     child.stdout?.on('data', (data) => {
       output += data;
+      hasOutput = true;
+
+      // 第一次有输出时显示顶部分隔线
+      if (!topSeparatorShown) {
+        console.log(chalk.gray('\n─── 输出 ' + '─'.repeat(30)));
+        topSeparatorShown = true;
+      }
+
       process.stdout.write(data);
     });
 
     child.stderr?.on('data', (data) => {
       output += data;
+      hasOutput = true;
+
+      // 第一次有输出时显示顶部分隔线
+      if (!topSeparatorShown) {
+        console.log(chalk.gray('\n─── 输出 ' + '─'.repeat(30)));
+        topSeparatorShown = true;
+      }
+
       process.stderr.write(data);
     });
 
     child.on('close', (code) => {
-      // 输出底部分隔线
-      console.log(chalk.gray('─'.repeat(38)));
+      // 只在有输出时显示底部分隔线
+      if (hasOutput) {
+        console.log(chalk.gray('─'.repeat(38)));
+      }
       resolve({ exitCode: code, output });
     });
 
     child.on('error', (err) => {
-      // 输出底部分隔线
+      // error 也算有输出
+      if (!topSeparatorShown) {
+        console.log(chalk.gray('\n─── 输出 ' + '─'.repeat(30)));
+      }
       console.log(chalk.gray('─'.repeat(38)));
       resolve({ exitCode: 1, output: err.message });
     });
@@ -356,7 +376,14 @@ const configCmd = program
   .description('管理配置');
 
 configCmd
-  .command('get')
+  .command('list')
+  .description('查看当前配置')
+  .action(() => {
+    displayConfig();
+  });
+
+configCmd
+  .command('show')
   .description('查看当前配置')
   .action(() => {
     displayConfig();
@@ -364,7 +391,7 @@ configCmd
 
 configCmd
   .command('set <key> <value>')
-  .description('设置配置项 (apiKey, baseUrl, model)')
+  .description('设置配置项 (apiKey, baseUrl, model, shellHook, chatHistoryLimit)')
   .action((key, value) => {
     try {
       setConfigValue(key, value);
@@ -648,7 +675,7 @@ ${chalk.bold('示例:')}
   ${chalk.cyan('pls hook install')}               安装 shell hook（增强功能）
   ${chalk.cyan('pls hook uninstall')}             卸载 shell hook
   ${chalk.cyan('pls config')}                     交互式配置
-  ${chalk.cyan('pls config get')}                 查看当前配置
+  ${chalk.cyan('pls config list')}                查看当前配置
 `);
 
 program.parse();
