@@ -4,11 +4,13 @@
   "description": "AI 驱动的命令行工具，将自然语言转换为可执行的 Shell 命令",
   "type": "module",
   "bin": {
-    "pls": "./bin/pls.js",
-    "please": "./bin/pls.js"
+    "pls": "./bin/pls.tsx",
+    "please": "./bin/pls.tsx"
   },
   "scripts": {
-    "start": "node bin/pls.js"
+    "dev": "tsx bin/pls.tsx",
+    "build": "tsc",
+    "start": "node dist/bin/pls.js"
   },
   "keywords": [
     "cli",
@@ -21,8 +23,28 @@
   "license": "MIT",
   "dependencies": {
     "chalk": "^5.6.2",
+    "cli-highlight": "^2.1.11",
     "commander": "^14.0.2",
+    "ink": "^6.5.1",
+    "ink-box": "^2.0.0",
+    "ink-markdown": "^1.0.4",
+    "ink-select-input": "^6.2.0",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "lowlight": "^3.3.0",
+    "marked": "^17.0.1",
     "openai": "^6.10.0",
-    "ora": "^9.0.0"
+    "ora": "^9.0.0",
+    "react": "^19.2.3",
+    "shiki": "^3.20.0",
+    "string-width": "^8.1.0",
+    "wrap-ansi": "^9.0.2"
+  },
+  "devDependencies": {
+    "@types/hast": "^3.0.4",
+    "@types/node": "^25.0.2",
+    "@types/react": "^19.2.7",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
   }
 }
