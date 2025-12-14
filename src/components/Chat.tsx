@@ -2,9 +2,8 @@ import React, { useState, useEffect } from 'react'
 import { Box, Text } from 'ink'
 import Spinner from 'ink-spinner'
 import { MarkdownDisplay } from './MarkdownDisplay.js'
-import { Duration } from './Duration.js'
 import { chatWithAI } from '../ai.js'
-import { getChatRoundCount, getChatHistoryFilePath } from '../chat-history.js'
+import { getChatRoundCount } from '../chat-history.js'
 import { theme } from '../ui/theme.js'
 
 interface ChatProps {
@@ -26,7 +25,7 @@ interface DebugInfo {
 
 /**
  * Chat 组件 - AI 对话模式
- * 支持流式输出、Markdown 渲染、调试信息
+ * 使用正常渲染，完成后保持最后一帧在终端
  */
 export function Chat({ prompt, debug, showRoundCount, onComplete }: ChatProps) {
   const [status, setStatus] = useState<Status>('thinking')
@@ -40,9 +39,7 @@ export function Chat({ prompt, debug, showRoundCount, onComplete }: ChatProps) {
 
     // 流式输出回调
     const onChunk = (chunk: string) => {
-      if (status === 'thinking') {
-        setStatus('streaming')
-      }
+      setStatus('streaming')
       setContent((prev) => prev + chunk)
     }
 
@@ -75,26 +72,33 @@ export function Chat({ prompt, debug, showRoundCount, onComplete }: ChatProps) {
         </Box>
       )}
 
-      {/* 思考中状态 */}
+      {/* 动态区域：思考状态 */}
       {status === 'thinking' && (
-        <Box marginY={1}>
+        <Box>
           <Text color={theme.info}>
             <Spinner type="dots" /> 思考中...
           </Text>
         </Box>
       )}
 
-      {/* 流式输出内容 */}
+      {/* 输出内容区域 */}
       {(status === 'streaming' || status === 'done') && content && (
-        <Box flexDirection="column" marginY={1}>
-          <MarkdownDisplay text={content} terminalWidth={100} />
+        <Box marginLeft={2} marginRight={2}>
+          <MarkdownDisplay text={content} terminalWidth={96} />
+        </Box>
+      )}
+
+      {/* 错误状态 */}
+      {status === 'error' && (
+        <Box marginTop={1} marginLeft={2}>
+          <Text color={theme.error}>❌ 错误: {content}</Text>
         </Box>
       )}
 
       {/* 完成后显示耗时 */}
       {status === 'done' && duration > 0 && (
-        <Box>
-          <Duration ms={duration} />
+        <Box marginTop={1}>
+          <Text color={theme.text.secondary}>({(duration / 1000).toFixed(2)}s)</Text>
         </Box>
       )}
 
@@ -111,13 +115,6 @@ export function Chat({ prompt, debug, showRoundCount, onComplete }: ChatProps) {
           <Text dimColor>{debugInfo.systemPrompt}</Text>
           <Text color={theme.text.secondary}>User Prompt: {debugInfo.userPrompt}</Text>
           <Text color={theme.accent}>━━━━━━━━━━━━━━━━</Text>
-        </Box>
-      )}
-
-      {/* 错误状态 */}
-      {status === 'error' && (
-        <Box marginY={1}>
-          <Text color={theme.error}>❌ 错误: {content}</Text>
         </Box>
       )}
     </Box>

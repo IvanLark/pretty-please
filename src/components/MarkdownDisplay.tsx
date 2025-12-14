@@ -192,7 +192,7 @@ function MarkdownDisplayInternal({ text, terminalWidth = 80 }: MarkdownDisplayPr
 
       if (headerNode) {
         addContentBlock(
-          <Box key={key} marginTop={1}>
+          <Box key={key} marginTop={lastLineEmpty ? 0 : 1}>
             {headerNode}
           </Box>
         )
@@ -241,8 +241,8 @@ function MarkdownDisplayInternal({ text, terminalWidth = 80 }: MarkdownDisplayPr
     // 空行或普通文本
     else {
       if (line.trim().length === 0 && !inCodeBlock) {
+        // 空行：不添加额外的 Box，让段落自然分隔
         if (!lastLineEmpty) {
-          contentBlocks.push(<Box key={`spacer-${index}`} height={1} />)
           lastLineEmpty = true
         }
       } else {

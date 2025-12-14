@@ -119,7 +119,7 @@ function ColorizeCodeInternal({ code, language = null, showLineNumbers = false }
   })
 
   return (
-    <Box flexDirection="column" paddingLeft={1} paddingY={1} borderStyle="round" borderColor={theme.border}>
+    <Box flexDirection="column" paddingLeft={1} paddingRight={1} paddingY={1} borderStyle="round" borderColor={theme.border}>
       {renderedLines}
     </Box>
   )
