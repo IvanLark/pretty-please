@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env node
 import React from 'react'
 import { render } from 'ink'
 import { Command } from 'commander'
