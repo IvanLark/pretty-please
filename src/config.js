@@ -11,6 +11,7 @@ const DEFAULT_CONFIG = {
   apiKey: '',
   baseUrl: 'https://api.openai.com/v1',
   model: 'gpt-4-turbo',
+  provider: 'openai',  // Mastra provider: openai, anthropic, deepseek, google, groq, mistral, cohere 等
   shellHook: false,  // 是否启用 shell hook 记录终端命令
   chatHistoryLimit: 10  // chat 对话历史保留轮数
 };
@@ -70,6 +71,13 @@ export function setConfigValue(key, value) {
       throw new Error('chatHistoryLimit 必须是大于 0 的整数');
     }
     config[key] = num;
+  } else if (key === 'provider') {
+    // 验证 provider 值
+    const validProviders = ['openai', 'anthropic', 'deepseek', 'google', 'groq', 'mistral', 'cohere', 'fireworks', 'together'];
+    if (!validProviders.includes(value)) {
+      throw new Error(`provider 必须是以下之一: ${validProviders.join(', ')}`);
+    }
+    config[key] = value;
   } else {
     config[key] = value;
   }
@@ -102,6 +110,7 @@ export function displayConfig() {
   console.log(chalk.gray('━'.repeat(40)));
   console.log(`  ${chalk.cyan('apiKey')}:           ${maskApiKey(config.apiKey)}`);
   console.log(`  ${chalk.cyan('baseUrl')}:          ${config.baseUrl}`);
+  console.log(`  ${chalk.cyan('provider')}:         ${config.provider}`);
   console.log(`  ${chalk.cyan('model')}:            ${config.model}`);
   console.log(`  ${chalk.cyan('shellHook')}:        ${config.shellHook ? chalk.green('已启用') : chalk.gray('未启用')}`);
   console.log(`  ${chalk.cyan('chatHistoryLimit')}: ${config.chatHistoryLimit} 轮`);

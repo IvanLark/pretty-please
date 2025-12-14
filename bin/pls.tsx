@@ -9,10 +9,12 @@ import fs from 'fs'
 import os from 'os'
 import chalk from 'chalk'
 import { CommandGenerator } from '../src/components/CommandGenerator.js'
+import { MultiStepCommandGenerator } from '../src/components/MultiStepCommandGenerator.js'
 import { Chat } from '../src/components/Chat.js'
 import { isConfigValid, setConfigValue, getConfig, maskApiKey } from '../src/config.js'
 import { clearHistory, addHistory, getHistory, getHistoryFilePath } from '../src/history.js'
 import { clearChatHistory, getChatRoundCount, getChatHistoryFilePath } from '../src/chat-history.js'
+import { type ExecutedStep } from '../src/multi-step.js'
 import {
   installShellHook,
   uninstallShellHook,
@@ -94,6 +96,7 @@ configCmd
     console2.muted('━'.repeat(40))
     console.log(`  ${chalk.hex('#00D9FF')('apiKey')}:           ${maskApiKey(config.apiKey)}`)
     console.log(`  ${chalk.hex('#00D9FF')('baseUrl')}:          ${config.baseUrl}`)
+    console.log(`  ${chalk.hex('#00D9FF')('provider')}:         ${config.provider}`)
     console.log(`  ${chalk.hex('#00D9FF')('model')}:            ${config.model}`)
     console.log(
       `  ${chalk.hex('#00D9FF')('shellHook')}:        ${
@@ -118,7 +121,7 @@ configCmd
 
 configCmd
   .command('set <key> <value>')
-  .description('设置配置项 (apiKey, baseUrl, model, shellHook, chatHistoryLimit)')
+  .description('设置配置项 (apiKey, baseUrl, provider, model, shellHook, chatHistoryLimit)')
   .action((key, value) => {
     try {
       setConfigValue(key, value)
@@ -416,90 +419,111 @@ program
       process.exit(1)
     }
 
-    // 使用 Ink 渲染命令生成和确认，确认后退出 Ink 用原生执行
+    // 使用多步骤命令生成器（统一处理单步和多步）
     ;(async () => {
-      let result: any = null
+      const executedSteps: ExecutedStep[] = []
+      let currentStepNumber = 1
 
-      const { waitUntilExit, unmount } = render(
-        <CommandGenerator
-          prompt={prompt}
-          debug={options.debug}
-          onComplete={(res) => {
-            result = res
-            // 立即 unmount，避免重复渲染
-            unmount()
-          }}
-        />
-      )
+      while (true) {
+        let stepResult: any = null
 
-      // 等待 Ink 完全退出
-      await waitUntilExit()
+        // 使用 Ink 渲染命令生成
+        const { waitUntilExit, unmount } = render(
+          <MultiStepCommandGenerator
+            prompt={prompt}
+            debug={options.debug}
+            previousSteps={executedSteps}
+            currentStepNumber={currentStepNumber}
+            onStepComplete={(res) => {
+              stepResult = res
+              unmount()
+            }}
+          />
+        )
 
-      // 小延迟确保终端状态稳定
-      await new Promise(resolve => setTimeout(resolve, 10))
+        await waitUntilExit()
+        await new Promise((resolve) => setTimeout(resolve, 10))
 
-      // Ink 已退出，现在处理结果（纯原生输出）
-      if (!result) {
-        process.exit(0)
-      }
-
-      if (result.error) {
-        console.log('')
-        console2.error(`错误: ${result.error}`)
-        console.log('')
-        process.exit(1)
-      }
-
-      if (result.hasBuiltin) {
-        // Builtin 命令，记录历史但不执行
-        addHistory({
-          userPrompt: prompt,
-          command: result.command!,
-          executed: false,
-          exitCode: null,
-          output: '',
-          reason: 'builtin',
-        })
-        process.exit(0)
-      }
-
-      if (result.cancelled) {
-        // 用户取消
-        addHistory({
-          userPrompt: prompt,
-          command: result.command!,
-          executed: false,
-          exitCode: null,
-          output: '',
-        })
-        process.exit(0)
-      }
-
-      if (result.confirmed && result.command) {
-        // 用户确认，执行命令（原生方式）
-        const execStart = Date.now()
-        const { exitCode, output } = await executeCommand(result.command, prompt)
-        const execDuration = Date.now() - execStart
-
-        // 记录历史
-        addHistory({
-          userPrompt: prompt,
-          command: result.command,
-          executed: true,
-          exitCode,
-          output,
-        })
-
-        // 显示结果
-        console.log('')
-        if (exitCode === 0) {
-          console2.success(`执行完成 ${console2.formatDuration(execDuration)}`)
-        } else {
-          console2.error(`执行失败，退出码: ${exitCode} ${console2.formatDuration(execDuration)}`)
+        // 处理步骤结果
+        if (!stepResult || stepResult.cancelled) {
+          console.log('')
+          console2.muted('已取消执行')
+          console.log('')
+          process.exit(0)
         }
-        console.log('')
 
-        process.exit(exitCode)
+        if (stepResult.hasBuiltin) {
+          addHistory({
+            userPrompt: currentStepNumber === 1 ? prompt : `[步骤${currentStepNumber}] ${prompt}`,
+            command: stepResult.command,
+            executed: false,
+            exitCode: null,
+            output: '',
+            reason: 'builtin',
+          })
+          process.exit(0)
+        }
+
+        if (stepResult.confirmed) {
+          // 执行命令
+          const execStart = Date.now()
+          const { exitCode, output } = await executeCommand(stepResult.command, prompt)
+          const execDuration = Date.now() - execStart
+
+          // 保存到执行历史
+          const executedStep: ExecutedStep = {
+            command: stepResult.command,
+            continue: stepResult.needsContinue || false,
+            reasoning: stepResult.reasoning,
+            nextStepHint: stepResult.nextStepHint,
+            exitCode,
+            output,
+          }
+          executedSteps.push(executedStep)
+
+          // 记录到 pls 历史
+          addHistory({
+            userPrompt:
+              currentStepNumber === 1 ? prompt : `[步骤${currentStepNumber}] ${stepResult.reasoning || prompt}`,
+            command: stepResult.command,
+            executed: true,
+            exitCode,
+            output,
+          })
+
+          // 显示结果
+          console.log('')
+          if (exitCode === 0) {
+            if (currentStepNumber === 1 && stepResult.needsContinue !== true) {
+              // 单步命令
+              console2.success(`执行完成 ${console2.formatDuration(execDuration)}`)
+            } else {
+              // 多步命令
+              console2.success(`步骤 ${currentStepNumber} 执行完成 ${console2.formatDuration(execDuration)}`)
+            }
+          } else {
+            // 执行失败，但不立即退出，让 AI 分析错误并调整策略
+            console2.error(
+              `步骤 ${currentStepNumber} 执行失败，退出码: ${exitCode} ${console2.formatDuration(execDuration)}`
+            )
+            console.log('')
+            console2.warning('正在请 AI 分析错误并调整策略...')
+            // 不退出，继续循环，AI 会收到错误信息
+          }
+
+          // 判断是否继续
+          if (stepResult.needsContinue !== true) {
+            if (currentStepNumber > 1) {
+              console.log('')
+              console2.success('✓ 所有步骤执行完成')
+            }
+            console.log('')
+            process.exit(0)
+          }
+
+          console.log('')
+          currentStepNumber++
+        }
       }
     })()
   })
@@ -513,6 +537,7 @@ ${chalk.bold('示例:')}
   ${chalk.hex('#00D9FF')('pls 查找大于 100MB 的文件')}        查找大文件
   ${chalk.hex('#00D9FF')('pls 删除刚才创建的文件')}          AI 会参考历史记录
   ${chalk.hex('#00D9FF')('pls --debug 压缩 logs 目录')}      显示调试信息
+  ${chalk.hex('#00D9FF')('pls -m 删除当前目录的空文件夹')}    多步骤模式（AI 自动规划）
   ${chalk.hex('#00D9FF')('pls chat tar 命令怎么用')}         AI 对话模式
   ${chalk.hex('#00D9FF')('pls chat clear')}                 清空对话历史
   ${chalk.hex('#00D9FF')('pls history')}                    查看 pls 命令历史

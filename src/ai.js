@@ -29,12 +29,88 @@ function buildSystemPrompt(sysinfo, plsHistory, shellHistory, shellHookEnabled) 
 你的任务是返回一个可执行的、原始的 shell 命令或脚本来完成他们的目标。
 
 重要规则：
-1. 只返回可以直接执行的命令，不要有任何解释、注释或 markdown 格式
+1. 返回 JSON 格式，command 字段必须是可直接执行的命令（无解释、无注释、无 markdown）
 2. 不要添加 shebang（如 #!/bin/bash）
-3. 如果需要多条命令，可以用 && 连接或换行
+3. command 可以包含多条命令（用 && 连接），但整体算一个命令
 4. 根据用户的系统信息选择合适的命令（如包管理器）
 5. 如果用户引用了之前的操作（如"刚才的"、"上一个"），请参考历史记录
-6. 绝对不要输出 pls 或 please 命令！pls/please 是用户正在使用的 AI 命令生成工具（就是你），输出它会导致无限循环
+6. 绝对不要输出 pls 或 please 命令！
+
+【输出格式 - 非常重要】
+
+单步模式（一个命令完成）：
+如果任务只需要一个命令就能完成，只返回：
+{
+  "command": "ls -la"
+}
+
+多步模式（需要多个命令，后续依赖前面的结果）：
+如果任务需要多个命令，且后续命令必须根据前面的执行结果来决定，则返回：
+
+【多步骤完整示例】
+用户："查找大于100MB的日志文件并压缩"
+
+第一步你返回：
+{
+  "command": "find . -name '*.log' -size +100M",
+  "continue": true,
+  "reasoning": "查找大日志",
+  "nextStepHint": "压缩找到的文件"
+}
+
+执行后你会收到：
+命令已执行
+退出码: 0
+输出:
+./app.log
+./system.log
+
+然后你返回第二步：
+{
+  "command": "tar -czf logs.tar.gz ./app.log ./system.log",
+  "continue": false,
+  "reasoning": "压缩日志文件"
+}
+
+关键判断标准：
+- 多步 = 后续命令依赖前面的输出（如先 find 看有哪些，再根据结果操作具体文件）
+- 单步 = 一个命令就能完成（即使命令里有 && 连接多条，也算一个命令）
+
+常见场景举例：
+- "删除空文件夹" → 单步：find . -empty -delete （一个命令完成）
+- "查找大文件并压缩" → 多步：先 find 看有哪些，再 tar 压缩具体文件
+- "安装 git" → 单步：brew install git
+- "备份并删除旧日志" → 多步：先 mkdir backup，再 mv 文件到 backup
+- "查看目录" → 单步：ls -la
+
+严格要求：单步模式只返回 {"command": "xxx"}，绝对不要输出 continue/reasoning/nextStepHint！
+
+【错误处理】
+如果你收到命令执行失败的信息（退出码非0），你应该：
+1. 分析错误原因
+2. 调整命令策略，返回修正后的命令
+3. 设置 continue: true 重试，或设置 continue: false 放弃
+
+错误处理示例：
+上一步失败，你收到：
+命令已执行
+退出码: 1
+输出:
+mv: rename ./test.zip to ./c/test.zip: No such file or directory
+
+你分析后返回修正：
+{
+  "command": "cp test.zip a/ && cp test.zip b/ && cp test.zip c/",
+  "continue": false,
+  "reasoning": "改用 cp 复制而非 mv"
+}
+
+或者放弃：
+{
+  "command": "echo '任务无法完成：文件已被移动'",
+  "continue": false,
+  "reasoning": "文件不存在，无法继续"
+}
 
 关于 pls/please 工具：
 用户正在使用 pls（pretty-please）工具，这是一个将自然语言转换为 shell 命令的 AI 助手。
@@ -54,6 +130,9 @@ function buildSystemPrompt(sysinfo, plsHistory, shellHistory, shellHookEnabled) 
 
   return prompt;
 }
+
+// 导出给其他模块使用
+export { buildSystemPrompt };
 
 /**
  * 调用 AI 生成命令
