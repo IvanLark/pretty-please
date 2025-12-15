@@ -24,11 +24,12 @@ import {
   clearShellHistory,
 } from '../src/shell-hook.js'
 import * as console2 from '../src/utils/console.js'
+// 导入 package.json（Bun 会自动打包进二进制）
+import packageJson from '../package.json'
 
-// 获取 package.json 版本
+// 保留这些用于其他可能的用途
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-const packageJson = JSON.parse(fs.readFileSync(join(__dirname, '../package.json'), 'utf-8'))
 
 const program = new Command()
 
