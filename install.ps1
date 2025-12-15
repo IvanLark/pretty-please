@@ -1,0 +1,101 @@
+# Pretty-Please (pls) Windows 安装脚本
+# 使用方法: irm https://raw.githubusercontent.com/IvanLark/pretty-please/main/install.ps1 | iex
+
+$ErrorActionPreference = "Stop"
+
+$REPO = "IvanLark/pretty-please"
+$BINARY_NAME = "pls.exe"
+$INSTALL_DIR = "$env:LOCALAPPDATA\Programs\pls"
+
+function Write-Info { param($msg) Write-Host "[INFO] " -ForegroundColor Cyan -NoNewline; Write-Host $msg }
+function Write-Success { param($msg) Write-Host "[OK] " -ForegroundColor Green -NoNewline; Write-Host $msg }
+function Write-Warn { param($msg) Write-Host "[WARN] " -ForegroundColor Yellow -NoNewline; Write-Host $msg }
+function Write-Error { param($msg) Write-Host "[ERROR] " -ForegroundColor Red -NoNewline; Write-Host $msg }
+
+function Get-LatestVersion {
+    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$REPO/releases/latest"
+    return $release.tag_name
+}
+
+function Main {
+    Write-Host ""
+    Write-Host "╭─────────────────────────────────────────╮" -ForegroundColor Cyan
+    Write-Host "│     Pretty-Please (pls) 安装程序        │" -ForegroundColor Cyan
+    Write-Host "│     AI 驱动的命令行助手                 │" -ForegroundColor Cyan
+    Write-Host "╰─────────────────────────────────────────╯" -ForegroundColor Cyan
+    Write-Host ""
+
+    # 检测架构
+    Write-Info "检测系统架构..."
+    $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+    if ($arch -ne "X64") {
+        Write-Error "不支持的架构: $arch (仅支持 x64)"
+        exit 1
+    }
+    Write-Success "架构: Windows x64"
+
+    # 获取版本
+    Write-Info "获取最新版本..."
+    try {
+        $VERSION = Get-LatestVersion
+    } catch {
+        Write-Error "无法获取最新版本: $_"
+        exit 1
+    }
+    Write-Success "版本: $VERSION"
+
+    # 下载 URL
+    $DOWNLOAD_URL = "https://github.com/$REPO/releases/download/$VERSION/pls-windows-x64.exe"
+    Write-Info "下载地址: $DOWNLOAD_URL"
+
+    # 创建安装目录
+    if (!(Test-Path $INSTALL_DIR)) {
+        Write-Info "创建目录: $INSTALL_DIR"
+        New-Item -ItemType Directory -Path $INSTALL_DIR -Force | Out-Null
+    }
+
+    # 下载
+    Write-Info "下载中..."
+    $DEST_PATH = Join-Path $INSTALL_DIR $BINARY_NAME
+    try {
+        Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile $DEST_PATH -UseBasicParsing
+    } catch {
+        Write-Error "下载失败: $_"
+        exit 1
+    }
+    Write-Success "安装完成!"
+
+    # 检查 PATH
+    Write-Host ""
+    $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if ($currentPath -notlike "*$INSTALL_DIR*") {
+        Write-Warn "$INSTALL_DIR 不在 PATH 中"
+        Write-Host ""
+
+        $addToPath = Read-Host "是否自动添加到 PATH? (Y/n)"
+        if ($addToPath -ne "n" -and $addToPath -ne "N") {
+            $newPath = "$currentPath;$INSTALL_DIR"
+            [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+            $env:Path = "$env:Path;$INSTALL_DIR"
+            Write-Success "已添加到 PATH"
+            Write-Warn "请重启终端使 PATH 生效"
+        } else {
+            Write-Host ""
+            Write-Host "请手动将以下路径添加到系统 PATH:" -ForegroundColor Yellow
+            Write-Host "  $INSTALL_DIR" -ForegroundColor Green
+        }
+    }
+
+    Write-Host ""
+    Write-Host "安装成功! " -ForegroundColor Green -NoNewline
+    Write-Host "运行 " -NoNewline
+    Write-Host "pls --help" -ForegroundColor Cyan -NoNewline
+    Write-Host " 查看帮助"
+    Write-Host ""
+    Write-Host "首次使用请运行 " -NoNewline
+    Write-Host "pls config" -ForegroundColor Cyan -NoNewline
+    Write-Host " 配置 API Key"
+    Write-Host ""
+}
+
+Main

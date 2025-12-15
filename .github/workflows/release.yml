@@ -1,0 +1,99 @@
+name: Build and Release
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., v1.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: bun-linux-x64
+            artifact: pls-linux-x64
+          - os: ubuntu-latest
+            target: bun-linux-arm64
+            artifact: pls-linux-arm64
+          - os: macos-latest
+            target: bun-darwin-arm64
+            artifact: pls-darwin-arm64
+          - os: macos-13
+            target: bun-darwin-x64
+            artifact: pls-darwin-x64
+          - os: windows-latest
+            target: bun-windows-x64
+            artifact: pls-windows-x64.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build binary
+        run: |
+          bun build ./bin/pls.tsx --compile --target=${{ matrix.target }} --outfile=${{ matrix.artifact }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: binaries
+          merge-multiple: true
+
+      - name: List binaries
+        run: ls -la binaries/
+
+      - name: Get release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create checksums
+        run: |
+          cd binaries
+          sha256sum pls-* > checksums.txt
+          cat checksums.txt
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: |
+            binaries/pls-linux-x64
+            binaries/pls-linux-arm64
+            binaries/pls-darwin-arm64
+            binaries/pls-darwin-x64
+            binaries/pls-windows-x64.exe
+            binaries/checksums.txt

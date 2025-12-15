@@ -31,22 +31,23 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yivan-lab/pretty-please.git"
+    "url": "https://github.com/IvanLark/pretty-please.git"
   },
   "bugs": {
-    "url": "https://github.com/yivan-lab/pretty-please/issues"
+    "url": "https://github.com/IvanLark/pretty-please/issues"
   },
-  "homepage": "https://github.com/yivan-lab/pretty-please#readme",
+  "homepage": "https://github.com/IvanLark/pretty-please#readme",
   "publishConfig": {
     "access": "public"
   },
   "files": [
     "bin",
-    "dist",
+    "dist/bin",
+    "dist/src",
+    "dist/package.json",
     "src",
     "README.md",
     "LICENSE",
-    "package.json",
     "tsconfig.json"
   ],
   "dependencies": {

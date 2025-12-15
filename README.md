@@ -36,7 +36,7 @@ yarn global add @yivan-lab/pretty-please
 
 ```bash
 # 克隆项目
-git clone https://github.com/yivan-lab/pretty-please.git
+git clone https://github.com/IvanLark/pretty-please.git
 cd pretty-please
 
 # 安装依赖
@@ -50,6 +50,25 @@ pnpm link --global
 ```
 
 安装完成后，你可以在任何目录使用 `pls` 或 `please` 命令了！
+
+### 方式三：一键安装（无需 Node.js）
+
+适用于云服务器、DevOps 场景，无需 Node.js 环境：
+
+**Linux / macOS:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/IvanLark/pretty-please/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/IvanLark/pretty-please/main/install.ps1 | iex
+```
+
+支持的平台：
+- Linux x64 / arm64
+- macOS Intel / Apple Silicon
+- Windows x64
 
 ## 🚀 快速开始
 
