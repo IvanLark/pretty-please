@@ -62,8 +62,6 @@
     "ink-text-input": "^6.0.0",
     "lowlight": "^3.3.0",
     "marked": "^17.0.1",
-    "openai": "^6.10.0",
-    "ora": "^9.0.0",
     "react": "^19.2.3",
     "shiki": "^3.20.0",
     "string-width": "^8.1.0",

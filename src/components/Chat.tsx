@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Box, Text } from 'ink'
 import Spinner from 'ink-spinner'
 import { MarkdownDisplay } from './MarkdownDisplay.js'
-import { chatWithAI } from '../ai.js'
+import { chatWithMastra } from '../mastra-chat.js'
 import { getChatRoundCount } from '../chat-history.js'
 import { theme } from '../ui/theme.js'
 
@@ -44,13 +44,13 @@ export function Chat({ prompt, debug, showRoundCount, onComplete }: ChatProps) {
     }
 
     // 调用 AI
-    chatWithAI(prompt, { debug: debug || false, onChunk })
-      .then((result: any) => {
+    chatWithMastra(prompt, { debug: debug || false, onChunk })
+      .then((result) => {
         const endTime = Date.now()
         setDuration(endTime - startTime)
         setStatus('done')
 
-        if (debug && typeof result === 'object' && 'debug' in result) {
+        if (debug && typeof result === 'object' && 'debug' in result && result.debug) {
           setDebugInfo(result.debug)
         }
 

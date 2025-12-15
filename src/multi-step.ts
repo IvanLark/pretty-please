@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { createShellAgent } from './mastra-agent.js'
-import { buildSystemPrompt } from './ai.js'
+import { buildCommandSystemPrompt } from './prompts.js'
 import { formatSystemInfo } from './sysinfo.js'
 import { formatHistoryForAI } from './history.js'
 import { formatShellHistoryForAI, getShellHistory } from './shell-hook.js'
@@ -36,7 +36,7 @@ export function getFullSystemPrompt() {
   const shellHistory = formatShellHistoryForAI()
   const shellHookEnabled = config.shellHook && getShellHistory().length > 0
 
-  return buildSystemPrompt(sysinfo, plsHistory, shellHistory, shellHookEnabled)
+  return buildCommandSystemPrompt(sysinfo, plsHistory, shellHistory, shellHookEnabled)
 }
 
 /**
