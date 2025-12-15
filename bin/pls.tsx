@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env tsx
 import React from 'react'
 import { render } from 'ink'
 import { Command } from 'commander'
@@ -13,7 +13,7 @@ import { MultiStepCommandGenerator } from '../src/components/MultiStepCommandGen
 import { Chat } from '../src/components/Chat.js'
 import { isConfigValid, setConfigValue, getConfig, maskApiKey } from '../src/config.js'
 import { clearHistory, addHistory, getHistory, getHistoryFilePath } from '../src/history.js'
-import { clearChatHistory, getChatRoundCount, getChatHistoryFilePath } from '../src/chat-history.js'
+import { clearChatHistory, getChatRoundCount, getChatHistoryFilePath, displayChatHistory } from '../src/chat-history.js'
 import { type ExecutedStep } from '../src/multi-step.js'
 import {
   installShellHook,
@@ -21,6 +21,8 @@ import {
   getHookStatus,
   detectShell,
   getShellConfigPath,
+  displayShellHistory,
+  clearShellHistory,
 } from '../src/shell-hook.js'
 import * as console2 from '../src/utils/console.js'
 
@@ -32,6 +34,21 @@ const packageJson = JSON.parse(fs.readFileSync(join(__dirname, '../package.json'
 const program = new Command()
 
 /**
+ * 计算字符串的显示宽度（中文占2个宽度）
+ */
+function getDisplayWidth(str: string): number {
+  let width = 0
+  for (const char of str) {
+    if (char.match(/[\u4e00-\u9fff\u3400-\u4dbf\uff00-\uffef\u3000-\u303f]/)) {
+      width += 2
+    } else {
+      width += 1
+    }
+  }
+  return width
+}
+
+/**
  * 执行命令（原生版本）
  */
 function executeCommand(command: string, prompt: string): Promise<{ exitCode: number; output: string }> {
@@ -40,7 +57,12 @@ function executeCommand(command: string, prompt: string): Promise<{ exitCode: nu
     let hasOutput = false
 
     console.log('') // 空行
-    console2.printSeparator('输出')
+
+    // 计算命令框宽度，让分隔线长度一致
+    const lines = command.split('\n')
+    const maxContentWidth = Math.max(...lines.map(l => getDisplayWidth(l)))
+    const boxWidth = Math.max(maxContentWidth + 4, getDisplayWidth('生成命令') + 6, 20)
+    console2.printSeparator('输出', boxWidth)
 
     const child = exec(command)
 
@@ -58,17 +80,17 @@ function executeCommand(command: string, prompt: string): Promise<{ exitCode: nu
 
     child.on('close', (code) => {
       if (hasOutput) {
-        console2.printSeparator('')
+        console2.printSeparator('', boxWidth)
       }
       resolve({ exitCode: code || 0, output })
     })
 
     child.on('error', (err) => {
       if (!hasOutput) {
-        console2.printSeparator('')
+        console2.printSeparator('', boxWidth)
       }
       console2.error(err.message)
-      console2.printSeparator('')
+      console2.printSeparator('', boxWidth)
       resolve({ exitCode: 1, output: err.message })
     })
   })
@@ -94,18 +116,25 @@ configCmd
 
     console.log('')
     console2.title('当前配置:')
-    console2.muted('━'.repeat(40))
-    console.log(`  ${chalk.hex('#00D9FF')('apiKey')}:           ${maskApiKey(config.apiKey)}`)
-    console.log(`  ${chalk.hex('#00D9FF')('baseUrl')}:          ${config.baseUrl}`)
-    console.log(`  ${chalk.hex('#00D9FF')('provider')}:         ${config.provider}`)
-    console.log(`  ${chalk.hex('#00D9FF')('model')}:            ${config.model}`)
+    console2.muted('━'.repeat(50))
+    console.log(`  ${chalk.hex('#00D9FF')('apiKey')}:              ${maskApiKey(config.apiKey)}`)
+    console.log(`  ${chalk.hex('#00D9FF')('baseUrl')}:             ${config.baseUrl}`)
+    console.log(`  ${chalk.hex('#00D9FF')('provider')}:            ${config.provider}`)
+    console.log(`  ${chalk.hex('#00D9FF')('model')}:               ${config.model}`)
     console.log(
-      `  ${chalk.hex('#00D9FF')('shellHook')}:        ${
+      `  ${chalk.hex('#00D9FF')('shellHook')}:           ${
         config.shellHook ? chalk.hex('#10B981')('已启用') : chalk.gray('未启用')
       }`
     )
-    console.log(`  ${chalk.hex('#00D9FF')('chatHistoryLimit')}: ${config.chatHistoryLimit} 轮`)
-    console2.muted('━'.repeat(40))
+    console.log(
+      `  ${chalk.hex('#00D9FF')('editMode')}:            ${
+        config.editMode === 'auto' ? chalk.hex('#00D9FF')('auto (自动编辑)') : chalk.gray('manual (按E编辑)')
+      }`
+    )
+    console.log(`  ${chalk.hex('#00D9FF')('chatHistoryLimit')}:    ${config.chatHistoryLimit} 轮`)
+    console.log(`  ${chalk.hex('#00D9FF')('commandHistoryLimit')}: ${config.commandHistoryLimit} 条`)
+    console.log(`  ${chalk.hex('#00D9FF')('shellHistoryLimit')}:   ${config.shellHistoryLimit} 条`)
+    console2.muted('━'.repeat(50))
     console2.muted(`配置文件: ${CONFIG_FILE}`)
     console.log('')
   })
@@ -161,7 +190,15 @@ historyCmd
         : chalk.gray('(未执行)')
 
       console.log(`\n${chalk.gray(`${index + 1}.`)} ${chalk.hex('#00D9FF')(item.userPrompt)}`)
-      console.log(`   ${chalk.dim('→')} ${item.command} ${status}`)
+
+      // 显示用户修改信息
+      if (item.userModified && item.aiGeneratedCommand) {
+        console.log(`   ${chalk.dim('AI 生成:')} ${chalk.gray(item.aiGeneratedCommand)}`)
+        console.log(`   ${chalk.dim('用户修改为:')} ${item.command} ${status} ${chalk.yellow('(已修改)')}`)
+      } else {
+        console.log(`   ${chalk.dim('→')} ${item.command} ${status}`)
+      }
+
       console.log(`   ${chalk.gray(item.timestamp)}`)
     })
 
@@ -180,7 +217,38 @@ historyCmd
     console.log('')
   })
 
-// 默认 history 命令（显示历史）
+// history chat 子命令
+const historyChatCmd = historyCmd.command('chat').description('查看或管理对话历史')
+
+historyChatCmd.action(() => {
+  displayChatHistory()
+})
+
+historyChatCmd
+  .command('clear')
+  .description('清空对话历史')
+  .action(() => {
+    clearChatHistory()
+    console.log('')
+    console2.success('对话历史已清空')
+    console.log('')
+  })
+
+// history shell 子命令
+const historyShellCmd = historyCmd.command('shell').description('查看或管理 Shell 历史')
+
+historyShellCmd.action(() => {
+  displayShellHistory()
+})
+
+historyShellCmd
+  .command('clear')
+  .description('清空 Shell 历史')
+  .action(() => {
+    clearShellHistory()
+  })
+
+// 默认 history 命令（显示命令历史）
 historyCmd.action(() => {
   const history = getHistory()
 
@@ -203,7 +271,15 @@ historyCmd.action(() => {
       : chalk.gray('(未执行)')
 
     console.log(`\n${chalk.gray(`${index + 1}.`)} ${chalk.hex('#00D9FF')(item.userPrompt)}`)
-    console.log(`   ${chalk.dim('→')} ${item.command} ${status}`)
+
+    // 显示用户修改信息
+    if (item.userModified && item.aiGeneratedCommand) {
+      console.log(`   ${chalk.dim('AI 生成:')} ${chalk.gray(item.aiGeneratedCommand)}`)
+      console.log(`   ${chalk.dim('用户修改为:')} ${item.command} ${status} ${chalk.yellow('(已修改)')}`)
+    } else {
+      console.log(`   ${chalk.dim('→')} ${item.command} ${status}`)
+    }
+
     console.log(`   ${chalk.gray(item.timestamp)}`)
   })
 
@@ -411,6 +487,7 @@ program
     ;(async () => {
       const executedSteps: ExecutedStep[] = []
       let currentStepNumber = 1
+      let lastStepFailed = false // 跟踪上一步是否失败
 
       while (true) {
         let stepResult: any = null
@@ -444,6 +521,8 @@ program
           addHistory({
             userPrompt: currentStepNumber === 1 ? prompt : `[步骤${currentStepNumber}] ${prompt}`,
             command: stepResult.command,
+            aiGeneratedCommand: stepResult.aiGeneratedCommand,  // AI 原始命令
+            userModified: stepResult.userModified || false,
             executed: false,
             exitCode: null,
             output: '',
@@ -453,6 +532,32 @@ program
         }
 
         if (stepResult.confirmed) {
+          // 如果命令为空，说明 AI 决定放弃
+          if (!stepResult.command || stepResult.command.trim() === '') {
+            console.log('')
+            if (stepResult.reasoning) {
+              console2.info(`💡 AI 分析: ${stepResult.reasoning}`)
+            }
+            console2.muted('❌ AI 决定停止尝试，任务失败')
+            console.log('')
+            process.exit(1)
+          }
+
+          // 特殊处理：如果上一步失败，且 AI 决定放弃（continue: false），直接显示原因并退出
+          if (
+            lastStepFailed &&
+            stepResult.needsContinue === false &&
+            stepResult.command.startsWith('echo')
+          ) {
+            console.log('')
+            if (stepResult.reasoning) {
+              console2.info(`💡 AI 分析: ${stepResult.reasoning}`)
+            }
+            console2.muted('❌ AI 决定停止尝试，任务失败')
+            console.log('')
+            process.exit(1)
+          }
+
           // 执行命令
           const execStart = Date.now()
           const { exitCode, output } = await executeCommand(stepResult.command, prompt)
@@ -474,6 +579,8 @@ program
             userPrompt:
               currentStepNumber === 1 ? prompt : `[步骤${currentStepNumber}] ${stepResult.reasoning || prompt}`,
             command: stepResult.command,
+            aiGeneratedCommand: stepResult.aiGeneratedCommand,  // AI 原始命令
+            userModified: stepResult.userModified || false,
             executed: true,
             exitCode,
             output,
@@ -489,14 +596,19 @@ program
               // 多步命令
               console2.success(`步骤 ${currentStepNumber} 执行完成 ${console2.formatDuration(execDuration)}`)
             }
+            lastStepFailed = false
           } else {
-            // 执行失败，但不立即退出，让 AI 分析错误并调整策略
+            // 执行失败，标记状态
             console2.error(
               `步骤 ${currentStepNumber} 执行失败，退出码: ${exitCode} ${console2.formatDuration(execDuration)}`
             )
             console.log('')
             console2.warning('正在请 AI 分析错误并调整策略...')
-            // 不退出，继续循环，AI 会收到错误信息
+            lastStepFailed = true
+            // 继续循环，让 AI 分析错误
+            console.log('')
+            currentStepNumber++
+            continue
           }
 
           // 判断是否继续
@@ -511,6 +623,20 @@ program
 
           console.log('')
           currentStepNumber++
+        } else if (!stepResult.confirmed && !stepResult.cancelled) {
+          // AI 返回了结果但没有确认（空命令的情况）
+          if (lastStepFailed && stepResult.reasoning) {
+            console.log('')
+            console2.info(`💡 AI 分析: ${stepResult.reasoning}`)
+            console2.muted('❌ AI 决定停止尝试，任务失败')
+            console.log('')
+            process.exit(1)
+          }
+          // 其他情况也退出
+          console.log('')
+          console2.muted('任务结束')
+          console.log('')
+          process.exit(0)
         }
       }
     })()

@@ -353,7 +353,13 @@ export function formatShellHistoryForAI() {
           return `${index + 1}. [pls] "${prompt}" → 生成命令: ${plsRecord.command} (包含 builtin，未执行)`;
         } else if (plsRecord.executed) {
           const execStatus = plsRecord.exitCode === 0 ? '✓' : `✗ 退出码:${plsRecord.exitCode}`;
-          return `${index + 1}. [pls] "${prompt}" → 实际执行: ${plsRecord.command} ${execStatus}`;
+
+          // 检查用户是否修改了命令
+          if (plsRecord.userModified && plsRecord.aiGeneratedCommand) {
+            return `${index + 1}. [pls] "${prompt}" → AI 生成: ${plsRecord.aiGeneratedCommand} / 用户修改为: ${plsRecord.command} ${execStatus}`;
+          } else {
+            return `${index + 1}. [pls] "${prompt}" → 实际执行: ${plsRecord.command} ${execStatus}`;
+          }
         } else {
           return `${index + 1}. [pls] "${prompt}" → 生成命令: ${plsRecord.command} (用户取消执行)`;
         }
@@ -390,4 +396,77 @@ export function getHookStatus() {
     configPath,
     historyFile: SHELL_HISTORY_FILE
   };
+}
+
+/**
+ * 显示 shell 历史
+ */
+export function displayShellHistory() {
+  const config = getConfig();
+  const history = getShellHistory();
+
+  if (!config.shellHook) {
+    console.log('');
+    console.log(chalk.yellow('⚠️  Shell Hook 未启用'));
+    console.log(chalk.gray('运行 ') + chalk.cyan('pls hook install') + chalk.gray(' 启用 Shell Hook'));
+    console.log('');
+    return;
+  }
+
+  if (history.length === 0) {
+    console.log('');
+    console.log(chalk.gray('暂无 Shell 历史记录'));
+    console.log('');
+    return;
+  }
+
+  console.log('');
+  console.log(chalk.bold(`终端历史（最近 ${history.length} 条）:`));
+  console.log(chalk.gray('━'.repeat(50)));
+
+  history.forEach((item, index) => {
+    const num = index + 1;
+    const status = item.exit === 0 ? chalk.green('✓') : chalk.red(`✗ (${item.exit})`);
+
+    // 检查是否是 pls 命令
+    const isPls = item.cmd.startsWith('pls ') || item.cmd.startsWith('please ');
+
+    if (isPls) {
+      // pls 命令：尝试从 history 查找详细信息
+      const args = item.cmd.replace(/^(pls|please)\s+/, '');
+      const plsRecord = findPlsHistoryMatch(args);
+
+      if (plsRecord && plsRecord.executed) {
+        // 检查用户是否修改了命令
+        if (plsRecord.userModified && plsRecord.aiGeneratedCommand) {
+          console.log(`  ${chalk.cyan(num.toString().padStart(2, ' '))}. ${chalk.magenta('[pls]')} "${args}"`);
+          console.log(`     ${chalk.dim('AI 生成:')} ${chalk.gray(plsRecord.aiGeneratedCommand)}`);
+          console.log(`     ${chalk.dim('用户修改为:')} ${plsRecord.command} ${status} ${chalk.yellow('(已修改)')}`);
+        } else {
+          console.log(`  ${chalk.cyan(num.toString().padStart(2, ' '))}. ${chalk.magenta('[pls]')} "${args}" → ${plsRecord.command} ${status}`);
+        }
+      } else {
+        console.log(`  ${chalk.cyan(num.toString().padStart(2, ' '))}. ${chalk.magenta('[pls]')} ${args} ${status}`);
+      }
+    } else {
+      console.log(`  ${chalk.cyan(num.toString().padStart(2, ' '))}. ${item.cmd} ${status}`);
+    }
+  });
+
+  console.log(chalk.gray('━'.repeat(50)));
+  console.log(chalk.gray(`配置: 保留最近 ${config.shellHistoryLimit} 条`));
+  console.log(chalk.gray(`文件: ${SHELL_HISTORY_FILE}`));
+  console.log('');
+}
+
+/**
+ * 清空 shell 历史
+ */
+export function clearShellHistory() {
+  if (fs.existsSync(SHELL_HISTORY_FILE)) {
+    fs.unlinkSync(SHELL_HISTORY_FILE);
+  }
+  console.log('');
+  console.log(chalk.green('✓ Shell 历史已清空'));
+  console.log('');
 }

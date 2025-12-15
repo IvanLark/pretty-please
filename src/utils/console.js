@@ -74,7 +74,8 @@ export function formatDuration(ms) {
  */
 export function printSeparator(text = '输出', length = 38) {
   const textPart = text ? ` ${text} ` : ''
-  const lineLength = Math.max(0, length - textPart.length)
+  const textWidth = getDisplayWidth(textPart)  // 使用显示宽度而不是字符数
+  const lineLength = Math.max(0, length - textWidth)
   const leftDashes = '─'.repeat(Math.floor(lineLength / 2))
   const rightDashes = '─'.repeat(Math.ceil(lineLength / 2))
   console.log(chalk.gray(`${leftDashes}${textPart}${rightDashes}`))

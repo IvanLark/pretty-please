@@ -13,7 +13,10 @@ const DEFAULT_CONFIG = {
   model: 'gpt-4-turbo',
   provider: 'openai',  // Mastra provider: openai, anthropic, deepseek, google, groq, mistral, cohere 等
   shellHook: false,  // 是否启用 shell hook 记录终端命令
-  chatHistoryLimit: 10  // chat 对话历史保留轮数
+  chatHistoryLimit: 10,  // chat 对话历史保留轮数
+  commandHistoryLimit: 10,  // pls 命令历史条数（发送给 AI 的）
+  shellHistoryLimit: 15,  // shell 历史条数（发送给 AI 的）
+  editMode: 'manual',  // 编辑模式：manual=按E编辑，auto=自动进入编辑
 };
 
 // 导出配置目录路径
@@ -65,10 +68,10 @@ export function setConfigValue(key, value) {
   // 处理特殊类型
   if (key === 'shellHook') {
     config[key] = value === 'true' || value === true;
-  } else if (key === 'chatHistoryLimit') {
+  } else if (key === 'chatHistoryLimit' || key === 'commandHistoryLimit' || key === 'shellHistoryLimit') {
     const num = parseInt(value, 10);
     if (isNaN(num) || num < 1) {
-      throw new Error('chatHistoryLimit 必须是大于 0 的整数');
+      throw new Error(`${key} 必须是大于 0 的整数`);
     }
     config[key] = num;
   } else if (key === 'provider') {
@@ -76,6 +79,13 @@ export function setConfigValue(key, value) {
     const validProviders = ['openai', 'anthropic', 'deepseek', 'google', 'groq', 'mistral', 'cohere', 'fireworks', 'together'];
     if (!validProviders.includes(value)) {
       throw new Error(`provider 必须是以下之一: ${validProviders.join(', ')}`);
+    }
+    config[key] = value;
+  } else if (key === 'editMode') {
+    // 验证 editMode 值
+    const validModes = ['manual', 'auto'];
+    if (!validModes.includes(value)) {
+      throw new Error(`editMode 必须是以下之一: ${validModes.join(', ')}`);
     }
     config[key] = value;
   } else {
@@ -107,14 +117,17 @@ export function maskApiKey(apiKey) {
 export function displayConfig() {
   const config = getConfig();
   console.log(chalk.bold('\n当前配置:'));
-  console.log(chalk.gray('━'.repeat(40)));
-  console.log(`  ${chalk.cyan('apiKey')}:           ${maskApiKey(config.apiKey)}`);
-  console.log(`  ${chalk.cyan('baseUrl')}:          ${config.baseUrl}`);
-  console.log(`  ${chalk.cyan('provider')}:         ${config.provider}`);
-  console.log(`  ${chalk.cyan('model')}:            ${config.model}`);
-  console.log(`  ${chalk.cyan('shellHook')}:        ${config.shellHook ? chalk.green('已启用') : chalk.gray('未启用')}`);
-  console.log(`  ${chalk.cyan('chatHistoryLimit')}: ${config.chatHistoryLimit} 轮`);
-  console.log(chalk.gray('━'.repeat(40)));
+  console.log(chalk.gray('━'.repeat(50)));
+  console.log(`  ${chalk.cyan('apiKey')}:              ${maskApiKey(config.apiKey)}`);
+  console.log(`  ${chalk.cyan('baseUrl')}:             ${config.baseUrl}`);
+  console.log(`  ${chalk.cyan('provider')}:            ${config.provider}`);
+  console.log(`  ${chalk.cyan('model')}:               ${config.model}`);
+  console.log(`  ${chalk.cyan('shellHook')}:           ${config.shellHook ? chalk.green('已启用') : chalk.gray('未启用')}`);
+  console.log(`  ${chalk.cyan('editMode')}:            ${config.editMode === 'auto' ? chalk.hex('#00D9FF')('auto (自动编辑)') : chalk.gray('manual (按E编辑)')}`);
+  console.log(`  ${chalk.cyan('chatHistoryLimit')}:    ${config.chatHistoryLimit} 轮`);
+  console.log(`  ${chalk.cyan('commandHistoryLimit')}: ${config.commandHistoryLimit} 条`);
+  console.log(`  ${chalk.cyan('shellHistoryLimit')}:   ${config.shellHistoryLimit} 条`);
+  console.log(chalk.gray('━'.repeat(50)));
   console.log(chalk.gray(`配置文件: ${CONFIG_FILE}\n`));
 }
 
@@ -195,13 +208,48 @@ export async function runConfigWizard() {
       config.shellHook = shellHook.trim() === 'true';
     }
 
-    // 6. Chat History Limit
+    // 6. Edit Mode
+    const editModeHint = chalk.gray('(manual=按E编辑, auto=自动编辑)');
+    const editModePrompt = `${chalk.cyan('编辑模式')} ${editModeHint}\n${chalk.gray('默认:')} ${chalk.yellow(config.editMode)} ${chalk.gray('→')} `;
+    const editMode = await question(rl, editModePrompt);
+    if (editMode.trim()) {
+      const validModes = ['manual', 'auto'];
+      if (!validModes.includes(editMode.trim())) {
+        console.log(chalk.hex('#EF4444')(`\n✗ 无效的 editMode，必须是: manual 或 auto`));
+        console.log();
+        rl.close();
+        return;
+      }
+      config.editMode = editMode.trim();
+    }
+
+    // 7. Chat History Limit
     const chatHistoryPrompt = `${chalk.cyan('Chat 历史保留轮数')}\n${chalk.gray('默认:')} ${chalk.yellow(config.chatHistoryLimit)} ${chalk.gray('→')} `;
     const chatHistoryLimit = await question(rl, chatHistoryPrompt);
     if (chatHistoryLimit.trim()) {
       const num = parseInt(chatHistoryLimit.trim(), 10);
       if (!isNaN(num) && num > 0) {
         config.chatHistoryLimit = num;
+      }
+    }
+
+    // 8. Command History Limit
+    const commandHistoryPrompt = `${chalk.cyan('命令历史保留条数')}\n${chalk.gray('默认:')} ${chalk.yellow(config.commandHistoryLimit)} ${chalk.gray('→')} `;
+    const commandHistoryLimit = await question(rl, commandHistoryPrompt);
+    if (commandHistoryLimit.trim()) {
+      const num = parseInt(commandHistoryLimit.trim(), 10);
+      if (!isNaN(num) && num > 0) {
+        config.commandHistoryLimit = num;
+      }
+    }
+
+    // 9. Shell History Limit
+    const shellHistoryPrompt = `${chalk.cyan('Shell 历史保留条数')}\n${chalk.gray('默认:')} ${chalk.yellow(config.shellHistoryLimit)} ${chalk.gray('→')} `;
+    const shellHistoryLimit = await question(rl, shellHistoryPrompt);
+    if (shellHistoryLimit.trim()) {
+      const num = parseInt(shellHistoryLimit.trim(), 10);
+      if (!isNaN(num) && num > 0) {
+        config.shellHistoryLimit = num;
       }
     }
 

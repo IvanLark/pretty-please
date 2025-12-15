@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { getConfig } from './config.js';
 
 const CONFIG_DIR = path.join(os.homedir(), '.please');
 const HISTORY_FILE = path.join(CONFIG_DIR, 'history.json');
@@ -46,6 +47,7 @@ function saveHistory(history) {
  * 添加一条历史记录
  */
 export function addHistory(record) {
+  const config = getConfig();
   const history = getHistory();
 
   // 截断输出
@@ -59,9 +61,10 @@ export function addHistory(record) {
   // 添加到开头
   history.unshift(record);
 
-  // 保留最近 N 条
-  if (history.length > MAX_HISTORY) {
-    history.length = MAX_HISTORY;
+  // 保留最近 N 条（从配置读取）
+  const maxHistory = config.commandHistoryLimit || MAX_HISTORY;
+  if (history.length > maxHistory) {
+    history.length = maxHistory;
   }
 
   saveHistory(history);
@@ -96,14 +99,21 @@ export function formatHistoryForAI() {
       status = '(用户取消执行)';
     }
 
-    let line = `${index + 1}. [${timeAgo}] "${item.userPrompt}" → ${item.command} ${status}`;
+    // 检查是否用户修改了命令
+    if (item.userModified && item.aiGeneratedCommand) {
+      // 用户修改了命令
+      return `${index + 1}. [${timeAgo}] "${item.userPrompt}" → AI 生成: ${item.aiGeneratedCommand} / 用户修改为: ${item.command} ${status}`;
+    } else {
+      // 未修改，使用原格式
+      let line = `${index + 1}. [${timeAgo}] "${item.userPrompt}" → ${item.command} ${status}`;
 
-    // 如果有输出且命令失败，附加输出摘要
-    if (item.output && item.exitCode !== 0) {
-      line += `\n   输出: ${item.output.split('\n')[0]}`; // 只取第一行
+      // 如果有输出且命令失败，附加输出摘要
+      if (item.output && item.exitCode !== 0) {
+        line += `\n   输出: ${item.output.split('\n')[0]}`; // 只取第一行
+      }
+
+      return line;
     }
-
-    return line;
   }).reverse(); // 从旧到新排列
 
   return `【最近通过 pls 执行的命令】\n${lines.join('\n')}`;

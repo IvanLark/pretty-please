@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import chalk from 'chalk';
 import { getConfig } from './config.js';
 
 const CONFIG_DIR = path.join(os.homedir(), '.please');
@@ -91,4 +92,35 @@ export function getChatHistoryFilePath() {
 export function getChatRoundCount() {
   const history = getChatHistory();
   return Math.floor(history.length / 2);
+}
+
+/**
+ * 显示对话历史（只显示用户的 prompt）
+ */
+export function displayChatHistory() {
+  const history = getChatHistory();
+  const config = getConfig();
+
+  if (history.length === 0) {
+    console.log('\n' + chalk.gray('暂无对话历史'));
+    console.log('');
+    return;
+  }
+
+  // 只提取用户消息
+  const userMessages = history.filter(msg => msg.role === 'user');
+
+  console.log('');
+  console.log(chalk.bold(`对话历史（最近 ${userMessages.length} 轮）:`));
+  console.log(chalk.gray('━'.repeat(50)));
+
+  userMessages.forEach((msg, index) => {
+    const num = index + 1;
+    console.log(`  ${chalk.cyan(num.toString().padStart(2, ' '))}. ${msg.content}`);
+  });
+
+  console.log(chalk.gray('━'.repeat(50)));
+  console.log(chalk.gray(`配置: 保留最近 ${config.chatHistoryLimit} 轮对话`));
+  console.log(chalk.gray(`文件: ${CHAT_HISTORY_FILE}`));
+  console.log('');
 }

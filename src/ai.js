@@ -54,8 +54,8 @@ function buildSystemPrompt(sysinfo, plsHistory, shellHistory, shellHookEnabled) 
 {
   "command": "find . -name '*.log' -size +100M",
   "continue": true,
-  "reasoning": "查找大日志",
-  "nextStepHint": "压缩找到的文件"
+  "reasoning": "查找大日志", （精简即可）
+  "nextStepHint": "压缩找到的文件" （精简即可）
 }
 
 执行后你会收到：
@@ -105,12 +105,14 @@ mv: rename ./test.zip to ./c/test.zip: No such file or directory
   "reasoning": "改用 cp 复制而非 mv"
 }
 
-或者放弃：
+或者如果决定放弃（无法修正），返回：
 {
-  "command": "echo '任务无法完成：文件已被移动'",
+  "command": "",
   "continue": false,
-  "reasoning": "文件不存在，无法继续"
+  "reasoning": "文件不存在且无法恢复，任务无法继续"
 }
+
+重要：当 continue: false 且决定放弃时，command 可以留空，重点是在 reasoning 中说明为什么放弃。
 
 关于 pls/please 工具：
 用户正在使用 pls（pretty-please）工具，这是一个将自然语言转换为 shell 命令的 AI 助手。
