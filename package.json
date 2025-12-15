@@ -4,13 +4,15 @@
   "description": "AI 驱动的命令行工具，将自然语言转换为可执行的 Shell 命令",
   "type": "module",
   "bin": {
-    "pls": "./bin/pls.tsx",
-    "please": "./bin/pls.tsx"
+    "pls": "./dist/bin/pls.js",
+    "please": "./dist/bin/pls.js"
   },
   "scripts": {
     "dev": "tsx bin/pls.tsx",
-    "build": "tsc",
+    "build": "tsc && node scripts/postbuild.js",
     "start": "node dist/bin/pls.js",
+    "link:dev": "mkdir -p ~/.local/bin && ln -sf \"$(pwd)/bin/pls.tsx\" ~/.local/bin/pls-dev && echo '✅ pls-dev 已链接到 ~/.local/bin/pls-dev'",
+    "unlink:dev": "rm -f ~/.local/bin/pls-dev && echo '✅ pls-dev 已移除'",
     "prepublishOnly": "pnpm build"
   },
   "keywords": [
