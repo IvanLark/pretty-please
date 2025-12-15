@@ -60,9 +60,10 @@ detect_platform() {
     esac
 }
 
-# 获取最新版本
+# 获取最新版本（通过重定向，避免 API 速率限制）
 get_latest_version() {
-    curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/'
+    # 使用 releases/latest 的重定向获取版本，不受 API 限制
+    curl -fsSI "https://github.com/${REPO}/releases/latest" | grep -i '^location:' | sed -E 's/.*\/tag\/([^[:space:]]+).*/\1/' | tr -d '\r'
 }
 
 # 主安装流程
