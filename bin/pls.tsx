@@ -1,6 +1,4 @@
 #!/usr/bin/env tsx
-import React from 'react'
-import { render } from 'ink'
 import { Command } from 'commander'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
@@ -8,8 +6,11 @@ import { exec } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import chalk from 'chalk'
-import { MultiStepCommandGenerator } from '../src/components/MultiStepCommandGenerator.js'
-import { Chat } from '../src/components/Chat.js'
+// React 和 Ink 懒加载（只在需要 UI 时加载）
+// import React from 'react'
+// import { render } from 'ink'
+// import { MultiStepCommandGenerator } from '../src/components/MultiStepCommandGenerator.js'
+// import { Chat } from '../src/components/Chat.js'
 import { isConfigValid, setConfigValue, getConfig, maskApiKey } from '../src/config.js'
 import { clearHistory, addHistory, getHistory, getHistoryFilePath } from '../src/history.js'
 import { clearChatHistory, getChatRoundCount, getChatHistoryFilePath, displayChatHistory } from '../src/chat-history.js'
@@ -45,7 +46,7 @@ function getThemeColors() {
 }
 import * as console2 from '../src/utils/console.js'
 // 导入 package.json（Bun 会自动打包进二进制）
-import packageJson from '../package.json'
+import packageJson from '../package.json' with { type: 'json' }
 
 // 保留这些用于其他可能的用途
 const __filename = fileURLToPath(import.meta.url)
@@ -57,15 +58,20 @@ const program = new Command()
 // 启动时异步检查更新（不阻塞主流程）
 let updateCheckResult: { hasUpdate: boolean; latestVersion: string | null } | null = null
 const isUpgradeCommand = process.argv.includes('upgrade')
-const isVersionCommand = process.argv.includes('-v') || process.argv.includes('--version')
 
+// 延迟更新检查到命令解析后（减少启动时间）
 // 非 upgrade 命令时才检查更新
 if (!isUpgradeCommand) {
-  checkForUpdates(packageJson.version).then((result) => {
-    updateCheckResult = result
-  }).catch(() => {
-    // 静默失败
-  })
+  // 延迟 100ms 开始检查，避免影响简单命令的响应速度
+  setTimeout(() => {
+    checkForUpdates(packageJson.version)
+      .then((result) => {
+        updateCheckResult = result
+      })
+      .catch(() => {
+        // 静默失败
+      })
+  }, 100)
 }
 
 // 程序退出时显示更新提示
@@ -555,15 +561,21 @@ chatCmd
       process.exit(1)
     }
 
-    // 使用 Ink 渲染对话（Chat 适合用 Ink 流式输出）
-    render(
-      <Chat
-        prompt={prompt}
-        debug={options.debug}
-        showRoundCount={true}
-        onComplete={() => process.exit(0)}
-      />
-    )
+    // 懒加载 Chat 组件（避免启动时加载 React/Ink）
+    ;(async () => {
+      const React = await import('react')
+      const { render } = await import('ink')
+      const { Chat } = await import('../src/components/Chat.js')
+
+      render(
+        React.createElement(Chat, {
+          prompt,
+          debug: options.debug,
+          showRoundCount: true,
+          onComplete: () => process.exit(0),
+        })
+      )
+    })()
   })
 
 // 默认命令（执行 prompt）
@@ -595,8 +607,12 @@ program
       process.exit(1)
     }
 
-    // 使用多步骤命令生成器（统一处理单步和多步）
+    // 懒加载 MultiStepCommandGenerator 组件（避免启动时加载 React/Ink）
     ;(async () => {
+      const React = await import('react')
+      const { render } = await import('ink')
+      const { MultiStepCommandGenerator } = await import('../src/components/MultiStepCommandGenerator.js')
+
       const executedSteps: ExecutedStep[] = []
       let currentStepNumber = 1
       let lastStepFailed = false // 跟踪上一步是否失败
@@ -606,16 +622,16 @@ program
 
         // 使用 Ink 渲染命令生成
         const { waitUntilExit, unmount } = render(
-          <MultiStepCommandGenerator
-            prompt={prompt}
-            debug={options.debug}
-            previousSteps={executedSteps}
-            currentStepNumber={currentStepNumber}
-            onStepComplete={(res) => {
+          React.createElement(MultiStepCommandGenerator, {
+            prompt,
+            debug: options.debug,
+            previousSteps: executedSteps,
+            currentStepNumber,
+            onStepComplete: (res: any) => {
               stepResult = res
               unmount()
-            }}
-          />
+            },
+          })
         )
 
         await waitUntilExit()
@@ -633,7 +649,7 @@ program
           addHistory({
             userPrompt: currentStepNumber === 1 ? prompt : `[步骤${currentStepNumber}] ${prompt}`,
             command: stepResult.command,
-            aiGeneratedCommand: stepResult.aiGeneratedCommand,  // AI 原始命令
+            aiGeneratedCommand: stepResult.aiGeneratedCommand, // AI 原始命令
             userModified: stepResult.userModified || false,
             executed: false,
             exitCode: null,
@@ -672,7 +688,7 @@ program
 
           // 执行命令
           const execStart = Date.now()
-          const { exitCode, output, stdout, stderr } = await executeCommand(stepResult.command)
+          const { exitCode, output, stdout } = await executeCommand(stepResult.command)
           const execDuration = Date.now() - execStart
 
           // 判断命令是否成功
@@ -698,7 +714,7 @@ program
             userPrompt:
               currentStepNumber === 1 ? prompt : `[步骤${currentStepNumber}] ${stepResult.reasoning || prompt}`,
             command: stepResult.command,
-            aiGeneratedCommand: stepResult.aiGeneratedCommand,  // AI 原始命令
+            aiGeneratedCommand: stepResult.aiGeneratedCommand, // AI 原始命令
             userModified: stepResult.userModified || false,
             executed: true,
             exitCode,

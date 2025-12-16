@@ -86,20 +86,33 @@ function ensureConfigDir(): void {
 
 /**
  * 读取配置
+ * 优化：添加缓存，避免重复读取文件
  */
+let cachedConfig: Config | null = null
+
 export function getConfig(): Config {
+  // 如果已有缓存，直接返回
+  if (cachedConfig !== null) {
+    return cachedConfig
+  }
+
   ensureConfigDir()
 
+  let config: Config
+
   if (!fs.existsSync(CONFIG_FILE)) {
-    return { ...DEFAULT_CONFIG }
+    config = { ...DEFAULT_CONFIG }
+  } else {
+    try {
+      const content = fs.readFileSync(CONFIG_FILE, 'utf-8')
+      config = { ...DEFAULT_CONFIG, ...JSON.parse(content) }
+    } catch {
+      config = { ...DEFAULT_CONFIG }
+    }
   }
 
-  try {
-    const content = fs.readFileSync(CONFIG_FILE, 'utf-8')
-    return { ...DEFAULT_CONFIG, ...JSON.parse(content) }
-  } catch {
-    return { ...DEFAULT_CONFIG }
-  }
+  cachedConfig = config
+  return config
 }
 
 /**
@@ -152,6 +165,10 @@ export function setConfigValue(key: string, value: string | boolean | number): C
   }
 
   saveConfig(config)
+
+  // 清除缓存，下次读取时会重新加载
+  cachedConfig = null
+
   return config
 }
 

@@ -1,5 +1,5 @@
 import chalk from 'chalk'
-import { getCurrentTheme } from '../ui/theme'
+import { getCurrentTheme } from '../ui/theme.js'
 
 /**
  * 原生控制台输出工具函数
