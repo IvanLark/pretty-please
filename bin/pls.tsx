@@ -23,6 +23,11 @@ import {
   displayShellHistory,
   clearShellHistory,
 } from '../src/shell-hook.js'
+import {
+  checkForUpdates,
+  showUpdateNotice,
+  performUpgrade,
+} from '../src/upgrade.js'
 import * as console2 from '../src/utils/console.js'
 // 导入 package.json（Bun 会自动打包进二进制）
 import packageJson from '../package.json'
@@ -32,6 +37,27 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 const program = new Command()
+
+// 启动时异步检查更新（不阻塞主流程）
+let updateCheckResult: { hasUpdate: boolean; latestVersion: string | null } | null = null
+const isUpgradeCommand = process.argv.includes('upgrade')
+const isVersionCommand = process.argv.includes('-v') || process.argv.includes('--version')
+
+// 非 upgrade 命令时才检查更新
+if (!isUpgradeCommand) {
+  checkForUpdates(packageJson.version).then((result) => {
+    updateCheckResult = result
+  }).catch(() => {
+    // 静默失败
+  })
+}
+
+// 程序退出时显示更新提示
+process.on('beforeExit', () => {
+  if (updateCheckResult?.hasUpdate && updateCheckResult.latestVersion && !isUpgradeCommand) {
+    showUpdateNotice(packageJson.version, updateCheckResult.latestVersion)
+  }
+})
 
 /**
  * 执行命令（原生版本）
@@ -380,6 +406,15 @@ hookCmd.action(() => {
   console.log('')
 })
 
+// upgrade 子命令
+program
+  .command('upgrade')
+  .description('升级到最新版本')
+  .action(async () => {
+    const success = await performUpgrade(packageJson.version)
+    process.exit(success ? 0 : 1)
+  })
+
 // chat 子命令
 const chatCmd = program.command('chat').description('AI 对话模式，问答、讲解命令')
 
@@ -644,6 +679,7 @@ ${chalk.bold('示例:')}
   ${chalk.hex('#00D9FF')('pls hook')}                       查看 shell hook 状态
   ${chalk.hex('#00D9FF')('pls hook install')}               安装 shell hook（增强功能）
   ${chalk.hex('#00D9FF')('pls hook uninstall')}             卸载 shell hook
+  ${chalk.hex('#00D9FF')('pls upgrade')}                    升级到最新版本
   ${chalk.hex('#00D9FF')('pls config')}                     交互式配置
   ${chalk.hex('#00D9FF')('pls config list')}                查看当前配置
 `
