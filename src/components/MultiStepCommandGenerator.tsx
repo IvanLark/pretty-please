@@ -7,7 +7,7 @@ import { detectBuiltin, formatBuiltins } from '../builtin-detector.js'
 import { CommandBox } from './CommandBox.js'
 import { ConfirmationPrompt } from './ConfirmationPrompt.js'
 import { Duration } from './Duration.js'
-import { theme } from '../ui/theme.js'
+import { getCurrentTheme } from '../ui/theme.js'
 import { getConfig } from '../config.js'
 
 interface MultiStepCommandGeneratorProps {
@@ -48,6 +48,7 @@ export const MultiStepCommandGenerator: React.FC<MultiStepCommandGeneratorProps>
   currentStepNumber = 1,
   onStepComplete,
 }) => {
+  const theme = getCurrentTheme()
   const [state, setState] = useState<State>({ type: 'thinking' })
   const [thinkDuration, setThinkDuration] = useState(0)
   const [debugInfo, setDebugInfo] = useState<any>(null)

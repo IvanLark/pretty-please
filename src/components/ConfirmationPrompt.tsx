@@ -1,6 +1,6 @@
 import React from 'react'
 import { Text, useInput } from 'ink'
-import { theme } from '../ui/theme.js'
+import { getCurrentTheme } from '../ui/theme.js'
 
 interface ConfirmationPromptProps {
   prompt: string
@@ -19,6 +19,7 @@ export const ConfirmationPrompt: React.FC<ConfirmationPromptProps> = ({
   onCancel,
   onEdit,
 }) => {
+  const theme = getCurrentTheme()
   useInput((input, key) => {
     if (key.return) {
       // 回车键

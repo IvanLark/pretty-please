@@ -3,6 +3,15 @@ import path from 'path'
 import os from 'os'
 import chalk from 'chalk'
 import { getConfig } from './config.js'
+import { getCurrentTheme } from './ui/theme.js'
+
+// 获取主题颜色
+function getColors() {
+  const theme = getCurrentTheme()
+  return {
+    primary: theme.primary,
+  }
+}
 
 const CONFIG_DIR = path.join(os.homedir(), '.please')
 const CHAT_HISTORY_FILE = path.join(CONFIG_DIR, 'chat_history.json')
@@ -104,6 +113,7 @@ export function getChatRoundCount(): number {
 export function displayChatHistory(): void {
   const history = getChatHistory()
   const config = getConfig()
+  const colors = getColors()
 
   if (history.length === 0) {
     console.log('\n' + chalk.gray('暂无对话历史'))
@@ -120,7 +130,7 @@ export function displayChatHistory(): void {
 
   userMessages.forEach((msg, index) => {
     const num = index + 1
-    console.log(`  ${chalk.cyan(num.toString().padStart(2, ' '))}. ${msg.content}`)
+    console.log(`  ${chalk.hex(colors.primary)(num.toString().padStart(2, ' '))}. ${msg.content}`)
   })
 
   console.log(chalk.gray('━'.repeat(50)))

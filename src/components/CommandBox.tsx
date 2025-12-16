@@ -1,6 +1,6 @@
 import React from 'react'
 import { Box, Text } from 'ink'
-import { theme } from '../ui/theme.js'
+import { getCurrentTheme } from '../ui/theme.js'
 import { getDisplayWidth } from '../utils/console.js'
 
 interface CommandBoxProps {
@@ -12,6 +12,7 @@ interface CommandBoxProps {
  * CommandBox 组件 - 显示带边框和标题的命令框
  */
 export const CommandBox: React.FC<CommandBoxProps> = ({ command, title = '生成命令' }) => {
+  const theme = getCurrentTheme()
   const lines = command.split('\n')
   const titleWidth = getDisplayWidth(title)
   const maxContentWidth = Math.max(...lines.map(l => getDisplayWidth(l)))

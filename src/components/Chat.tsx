@@ -4,7 +4,7 @@ import Spinner from 'ink-spinner'
 import { MarkdownDisplay } from './MarkdownDisplay.js'
 import { chatWithMastra } from '../mastra-chat.js'
 import { getChatRoundCount } from '../chat-history.js'
-import { theme } from '../ui/theme.js'
+import { getCurrentTheme } from '../ui/theme.js'
 
 interface ChatProps {
   prompt: string
@@ -28,6 +28,7 @@ interface DebugInfo {
  * 使用正常渲染，完成后保持最后一帧在终端
  */
 export function Chat({ prompt, debug, showRoundCount, onComplete }: ChatProps) {
+  const theme = getCurrentTheme()
   const [status, setStatus] = useState<Status>('thinking')
   const [content, setContent] = useState('')
   const [duration, setDuration] = useState(0)

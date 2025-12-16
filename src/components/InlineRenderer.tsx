@@ -1,6 +1,6 @@
 import React from 'react'
 import { Text } from 'ink'
-import { theme } from '../ui/theme.js'
+import { getCurrentTheme } from '../ui/theme.js'
 
 interface RenderInlineProps {
   text: string
@@ -12,6 +12,7 @@ interface RenderInlineProps {
  * 处理 **粗体**、*斜体*、`代码`、~~删除线~~、<u>下划线</u>、链接
  */
 function RenderInlineInternal({ text, defaultColor }: RenderInlineProps) {
+  const theme = getCurrentTheme()
   const baseColor = defaultColor || theme.text.primary
 
   // 快速路径：纯文本无 markdown

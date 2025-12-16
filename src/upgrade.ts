@@ -9,6 +9,16 @@ import http from 'http'
 import { execSync, spawn } from 'child_process'
 import chalk from 'chalk'
 import * as console2 from './utils/console.js'
+import { getCurrentTheme } from './ui/theme.js'
+
+// 获取主题颜色
+function getColors() {
+  const theme = getCurrentTheme()
+  return {
+    primary: theme.primary,
+    success: theme.success,
+  }
+}
 
 const REPO = 'IvanLark/pretty-please'
 const UPDATE_CHECK_FILE = path.join(os.homedir(), '.please', 'update-check.json')
@@ -184,9 +194,10 @@ export async function checkForUpdates(
  * 显示更新提示
  */
 export function showUpdateNotice(currentVersion: string, latestVersion: string): void {
+  const colors = getColors()
   // 使用简洁的单行提示，避免复杂的对齐问题
   console.log('')
-  console2.warning(`发现新版本: ${currentVersion} → ${chalk.green(latestVersion)}，运行 ${chalk.cyan('pls upgrade')} 更新`)
+  console2.warning(`发现新版本: ${currentVersion} → ${chalk.hex(colors.success)(latestVersion)}，运行 ${chalk.hex(colors.primary)('pls upgrade')} 更新`)
 }
 
 /**
@@ -279,7 +290,7 @@ export async function performUpgrade(currentVersion: string): Promise<boolean> {
     console.log('')
     console2.warning('检测到你是通过 npm 安装的，请使用以下命令更新:')
     console.log('')
-    console.log(chalk.cyan('  npm update -g @yivan-lab/pretty-please'))
+    console.log(chalk.hex(getColors().primary)('  npm update -g @yivan-lab/pretty-please'))
     console.log('')
     return false
   }
@@ -298,7 +309,7 @@ export async function performUpgrade(currentVersion: string): Promise<boolean> {
     let lastPercent = 0
     await downloadFile(downloadUrl, tempFile, (percent) => {
       if (percent - lastPercent >= 10 || percent === 100) {
-        process.stdout.write(`\r${chalk.hex('#00D9FF')('[INFO]')} 下载中... ${percent}%`)
+        process.stdout.write(`\r${chalk.hex(getCurrentTheme().primary)('[INFO]')} 下载中... ${percent}%`)
         lastPercent = percent
       }
     })
@@ -341,7 +352,7 @@ pause
       console.log('')
       console2.warning('Windows 上需要额外步骤完成升级:')
       console.log('')
-      console.log(chalk.cyan(`  请运行: ${batchPath}`))
+      console.log(chalk.hex(getColors().primary)(`  请运行: ${batchPath}`))
       console.log('')
       return true
     }
@@ -377,7 +388,7 @@ pause
       console.log('')
       console2.warning('权限不足，请尝试使用 sudo:')
       console.log('')
-      console.log(chalk.cyan('  sudo pls upgrade'))
+      console.log(chalk.hex(getColors().primary)('  sudo pls upgrade'))
       console.log('')
     }
 

@@ -1,6 +1,6 @@
 import React from 'react'
 import { Text } from 'ink'
-import { theme } from '../ui/theme.js'
+import { getCurrentTheme } from '../ui/theme.js'
 
 interface DurationProps {
   ms: number
@@ -20,5 +20,6 @@ function formatDuration(ms: number): string {
  * Duration 组件 - 显示耗时
  */
 export const Duration: React.FC<DurationProps> = ({ ms }) => {
+  const theme = getCurrentTheme()
   return <Text color={theme.text.secondary}>({formatDuration(ms)})</Text>
 }

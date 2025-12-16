@@ -4,6 +4,19 @@ import os from 'os'
 import chalk from 'chalk'
 import { CONFIG_DIR, getConfig, setConfigValue } from './config.js'
 import { getHistory } from './history.js'
+import { getCurrentTheme } from './ui/theme.js'
+
+// 获取主题颜色
+function getColors() {
+  const theme = getCurrentTheme()
+  return {
+    primary: theme.primary,
+    success: theme.success,
+    error: theme.error,
+    warning: theme.warning,
+    secondary: theme.secondary,
+  }
+}
 
 const SHELL_HISTORY_FILE = path.join(CONFIG_DIR, 'shell_history.jsonl')
 const MAX_SHELL_HISTORY = 20
@@ -186,15 +199,16 @@ function generateHookScript(shellType: ShellType): string | null {
 export async function installShellHook(): Promise<boolean> {
   const shellType = detectShell()
   const configPath = getShellConfigPath(shellType)
+  const colors = getColors()
 
   if (!configPath) {
-    console.log(chalk.red(`❌ 不支持的 shell 类型: ${shellType}`))
+    console.log(chalk.hex(colors.error)(`❌ 不支持的 shell 类型: ${shellType}`))
     return false
   }
 
   const hookScript = generateHookScript(shellType)
   if (!hookScript) {
-    console.log(chalk.red(`❌ 无法为 ${shellType} 生成 hook 脚本`))
+    console.log(chalk.hex(colors.error)(`❌ 无法为 ${shellType} 生成 hook 脚本`))
     return false
   }
 
@@ -202,7 +216,7 @@ export async function installShellHook(): Promise<boolean> {
   if (fs.existsSync(configPath)) {
     const content = fs.readFileSync(configPath, 'utf-8')
     if (content.includes(HOOK_START_MARKER)) {
-      console.log(chalk.yellow('⚠️  Shell hook 已安装，跳过'))
+      console.log(chalk.hex(colors.warning)('⚠️  Shell hook 已安装，跳过'))
       setConfigValue('shellHook', true)
       return true
     }
@@ -226,9 +240,9 @@ export async function installShellHook(): Promise<boolean> {
   // 更新配置
   setConfigValue('shellHook', true)
 
-  console.log(chalk.green(`✅ Shell hook 已安装到: ${configPath}`))
-  console.log(chalk.yellow('⚠️  请重启终端或执行以下命令使其生效:'))
-  console.log(chalk.cyan(`   source ${configPath}`))
+  console.log(chalk.hex(colors.success)(`✅ Shell hook 已安装到: ${configPath}`))
+  console.log(chalk.hex(colors.warning)('⚠️  请重启终端或执行以下命令使其生效:'))
+  console.log(chalk.hex(colors.primary)(`   source ${configPath}`))
 
   return true
 }
@@ -239,9 +253,10 @@ export async function installShellHook(): Promise<boolean> {
 export function uninstallShellHook(): boolean {
   const shellType = detectShell()
   const configPath = getShellConfigPath(shellType)
+  const colors = getColors()
 
   if (!configPath || !fs.existsSync(configPath)) {
-    console.log(chalk.yellow('⚠️  未找到 shell 配置文件'))
+    console.log(chalk.hex(colors.warning)('⚠️  未找到 shell 配置文件'))
     setConfigValue('shellHook', false)
     return true
   }
@@ -253,7 +268,7 @@ export function uninstallShellHook(): boolean {
   const endIndex = content.indexOf(HOOK_END_MARKER)
 
   if (startIndex === -1 || endIndex === -1) {
-    console.log(chalk.yellow('⚠️  未找到已安装的 hook'))
+    console.log(chalk.hex(colors.warning)('⚠️  未找到已安装的 hook'))
     setConfigValue('shellHook', false)
     return true
   }
@@ -271,8 +286,8 @@ export function uninstallShellHook(): boolean {
     fs.unlinkSync(SHELL_HISTORY_FILE)
   }
 
-  console.log(chalk.green('✅ Shell hook 已卸载'))
-  console.log(chalk.yellow('⚠️  请重启终端使其生效'))
+  console.log(chalk.hex(colors.success)('✅ Shell hook 已卸载'))
+  console.log(chalk.hex(colors.warning)('⚠️  请重启终端使其生效'))
 
   return true
 }
@@ -430,11 +445,12 @@ export function getHookStatus(): HookStatus {
 export function displayShellHistory(): void {
   const config = getConfig()
   const history = getShellHistory()
+  const colors = getColors()
 
   if (!config.shellHook) {
     console.log('')
-    console.log(chalk.yellow('⚠️  Shell Hook 未启用'))
-    console.log(chalk.gray('运行 ') + chalk.cyan('pls hook install') + chalk.gray(' 启用 Shell Hook'))
+    console.log(chalk.hex(colors.warning)('⚠️  Shell Hook 未启用'))
+    console.log(chalk.gray('运行 ') + chalk.hex(colors.primary)('pls hook install') + chalk.gray(' 启用 Shell Hook'))
     console.log('')
     return
   }
@@ -452,7 +468,7 @@ export function displayShellHistory(): void {
 
   history.forEach((item, index) => {
     const num = index + 1
-    const status = item.exit === 0 ? chalk.green('✓') : chalk.red(`✗ (${item.exit})`)
+    const status = item.exit === 0 ? chalk.hex(colors.success)('✓') : chalk.hex(colors.error)(`✗ (${item.exit})`)
 
     // 检查是否是 pls 命令
     const isPls = item.cmd.startsWith('pls ') || item.cmd.startsWith('please ')
@@ -465,21 +481,21 @@ export function displayShellHistory(): void {
       if (plsRecord && plsRecord.executed) {
         // 检查用户是否修改了命令
         if (plsRecord.userModified && plsRecord.aiGeneratedCommand) {
-          console.log(`  ${chalk.cyan(num.toString().padStart(2, ' '))}. ${chalk.magenta('[pls]')} "${args}"`)
+          console.log(`  ${chalk.hex(colors.primary)(num.toString().padStart(2, ' '))}. ${chalk.hex(colors.secondary)('[pls]')} "${args}"`)
           console.log(`     ${chalk.dim('AI 生成:')} ${chalk.gray(plsRecord.aiGeneratedCommand)}`)
           console.log(
-            `     ${chalk.dim('用户修改为:')} ${plsRecord.command} ${status} ${chalk.yellow('(已修改)')}`
+            `     ${chalk.dim('用户修改为:')} ${plsRecord.command} ${status} ${chalk.hex(colors.warning)('(已修改)')}`
           )
         } else {
           console.log(
-            `  ${chalk.cyan(num.toString().padStart(2, ' '))}. ${chalk.magenta('[pls]')} "${args}" → ${plsRecord.command} ${status}`
+            `  ${chalk.hex(colors.primary)(num.toString().padStart(2, ' '))}. ${chalk.hex(colors.secondary)('[pls]')} "${args}" → ${plsRecord.command} ${status}`
           )
         }
       } else {
-        console.log(`  ${chalk.cyan(num.toString().padStart(2, ' '))}. ${chalk.magenta('[pls]')} ${args} ${status}`)
+        console.log(`  ${chalk.hex(colors.primary)(num.toString().padStart(2, ' '))}. ${chalk.hex(colors.secondary)('[pls]')} ${args} ${status}`)
       }
     } else {
-      console.log(`  ${chalk.cyan(num.toString().padStart(2, ' '))}. ${item.cmd} ${status}`)
+      console.log(`  ${chalk.hex(colors.primary)(num.toString().padStart(2, ' '))}. ${item.cmd} ${status}`)
     }
   })
 
@@ -496,7 +512,8 @@ export function clearShellHistory(): void {
   if (fs.existsSync(SHELL_HISTORY_FILE)) {
     fs.unlinkSync(SHELL_HISTORY_FILE)
   }
+  const colors = getColors()
   console.log('')
-  console.log(chalk.green('✓ Shell 历史已清空'))
+  console.log(chalk.hex(colors.success)('✓ Shell 历史已清空'))
   console.log('')
 }

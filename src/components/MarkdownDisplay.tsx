@@ -1,6 +1,6 @@
 import React from 'react'
 import { Text, Box } from 'ink'
-import { theme } from '../ui/theme.js'
+import { getCurrentTheme } from '../ui/theme.js'
 import { ColorizeCode } from './CodeColorizer.js'
 import { TableRenderer } from './TableRenderer.js'
 import { RenderInline } from './InlineRenderer.js'
@@ -18,6 +18,7 @@ interface MarkdownDisplayProps {
 function MarkdownDisplayInternal({ text, terminalWidth = 80 }: MarkdownDisplayProps) {
   if (!text) return <></>
 
+  const theme = getCurrentTheme()
   const lines = text.split(/\r?\n/)
 
   // 正则表达式

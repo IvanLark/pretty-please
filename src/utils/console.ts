@@ -1,21 +1,25 @@
 import chalk from 'chalk'
+import { getCurrentTheme } from '../ui/theme'
 
 /**
  * 原生控制台输出工具函数
  * 用于不需要 Ink 的场景，避免清屏和性能问题
  */
 
-// 主题色
-const colors = {
-  primary: '#00D9FF',
-  secondary: '#A78BFA',
-  accent: '#F472B6',
-  success: '#10B981',
-  error: '#EF4444',
-  warning: '#F59E0B',
-  info: '#3B82F6',
-  muted: '#6B7280',
-} as const
+// 获取当前主题颜色
+function getColors() {
+  const theme = getCurrentTheme()
+  return {
+    primary: theme.primary,
+    secondary: theme.secondary,
+    accent: theme.accent,
+    success: theme.success,
+    error: theme.error,
+    warning: theme.warning,
+    info: theme.info,
+    muted: theme.text.muted,
+  }
+}
 
 /**
  * 计算字符串的显示宽度（中文占2个宽度）
@@ -36,6 +40,7 @@ export function getDisplayWidth(str: string): number {
  * 绘制命令框（原生版本）
  */
 export function drawCommandBox(command: string, title: string = '生成命令'): void {
+  const colors = getColors()
   const lines = command.split('\n')
   const titleWidth = getDisplayWidth(title)
   const maxContentWidth = Math.max(...lines.map((l) => getDisplayWidth(l)))
@@ -82,6 +87,7 @@ export function printSeparator(text: string = '输出', length: number = 38): vo
  * 输出成功消息
  */
 export function success(message: string): void {
+  const colors = getColors()
   console.log(chalk.hex(colors.success)('✓ ' + message))
 }
 
@@ -89,6 +95,7 @@ export function success(message: string): void {
  * 输出错误消息
  */
 export function error(message: string): void {
+  const colors = getColors()
   console.log(chalk.hex(colors.error)('✗ ' + message))
 }
 
@@ -96,6 +103,7 @@ export function error(message: string): void {
  * 输出警告消息
  */
 export function warning(message: string): void {
+  const colors = getColors()
   console.log(chalk.hex(colors.warning)('⚠️  ' + message))
 }
 
@@ -103,6 +111,7 @@ export function warning(message: string): void {
  * 输出信息消息
  */
 export function info(message: string): void {
+  const colors = getColors()
   console.log(chalk.hex(colors.info)(message))
 }
 
@@ -110,6 +119,7 @@ export function info(message: string): void {
  * 输出灰色文本
  */
 export function muted(message: string): void {
+  const colors = getColors()
   console.log(chalk.hex(colors.muted)(message))
 }
 
@@ -124,5 +134,6 @@ export function title(message: string): void {
  * 输出主色文本
  */
 export function primary(message: string): void {
+  const colors = getColors()
   console.log(chalk.hex(colors.primary)(message))
 }

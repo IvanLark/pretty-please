@@ -28,6 +28,21 @@ import {
   showUpdateNotice,
   performUpgrade,
 } from '../src/upgrade.js'
+import { getCurrentTheme } from '../src/ui/theme.js'
+
+// 获取主题颜色的辅助函数
+function getThemeColors() {
+  const theme = getCurrentTheme()
+  return {
+    primary: theme.primary,
+    success: theme.success,
+    error: theme.error,
+    warning: theme.warning,
+    info: theme.info,
+    muted: theme.text.muted,
+    secondary: theme.text.secondary,
+  }
+}
 import * as console2 from '../src/utils/console.js'
 // 导入 package.json（Bun 会自动打包进二进制）
 import packageJson from '../package.json'
@@ -37,6 +52,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 const program = new Command()
+
 
 // 启动时异步检查更新（不阻塞主流程）
 let updateCheckResult: { hasUpdate: boolean; latestVersion: string | null } | null = null
@@ -128,23 +144,28 @@ configCmd
     console.log('')
     console2.title('当前配置:')
     console2.muted('━'.repeat(50))
-    console.log(`  ${chalk.hex('#00D9FF')('apiKey')}:              ${maskApiKey(config.apiKey)}`)
-    console.log(`  ${chalk.hex('#00D9FF')('baseUrl')}:             ${config.baseUrl}`)
-    console.log(`  ${chalk.hex('#00D9FF')('provider')}:            ${config.provider}`)
-    console.log(`  ${chalk.hex('#00D9FF')('model')}:               ${config.model}`)
+    console.log(`  ${chalk.hex(getThemeColors().primary)('apiKey')}:              ${maskApiKey(config.apiKey)}`)
+    console.log(`  ${chalk.hex(getThemeColors().primary)('baseUrl')}:             ${config.baseUrl}`)
+    console.log(`  ${chalk.hex(getThemeColors().primary)('provider')}:            ${config.provider}`)
+    console.log(`  ${chalk.hex(getThemeColors().primary)('model')}:               ${config.model}`)
     console.log(
-      `  ${chalk.hex('#00D9FF')('shellHook')}:           ${
-        config.shellHook ? chalk.hex('#10B981')('已启用') : chalk.gray('未启用')
+      `  ${chalk.hex(getThemeColors().primary)('shellHook')}:           ${
+        config.shellHook ? chalk.hex(getThemeColors().success)('已启用') : chalk.gray('未启用')
       }`
     )
     console.log(
-      `  ${chalk.hex('#00D9FF')('editMode')}:            ${
-        config.editMode === 'auto' ? chalk.hex('#00D9FF')('auto (自动编辑)') : chalk.gray('manual (按E编辑)')
+      `  ${chalk.hex(getThemeColors().primary)('editMode')}:            ${
+        config.editMode === 'auto' ? chalk.hex(getThemeColors().primary)('auto (自动编辑)') : chalk.gray('manual (按E编辑)')
       }`
     )
-    console.log(`  ${chalk.hex('#00D9FF')('chatHistoryLimit')}:    ${config.chatHistoryLimit} 轮`)
-    console.log(`  ${chalk.hex('#00D9FF')('commandHistoryLimit')}: ${config.commandHistoryLimit} 条`)
-    console.log(`  ${chalk.hex('#00D9FF')('shellHistoryLimit')}:   ${config.shellHistoryLimit} 条`)
+    console.log(`  ${chalk.hex(getThemeColors().primary)('chatHistoryLimit')}:    ${config.chatHistoryLimit} 轮`)
+    console.log(`  ${chalk.hex(getThemeColors().primary)('commandHistoryLimit')}: ${config.commandHistoryLimit} 条`)
+    console.log(`  ${chalk.hex(getThemeColors().primary)('shellHistoryLimit')}:   ${config.shellHistoryLimit} 条`)
+    console.log(
+      `  ${chalk.hex(getThemeColors().primary)('theme')}:               ${
+        config.theme === 'dark' ? chalk.hex(getThemeColors().primary)('dark (深色)') : chalk.hex(getThemeColors().primary)('light (浅色)')
+      }`
+    )
     console2.muted('━'.repeat(50))
     console2.muted(`配置文件: ${CONFIG_FILE}`)
     console.log('')
@@ -173,6 +194,75 @@ configCmd.action(async () => {
   await runConfigWizard()
 })
 
+// theme 子命令
+const themeCmd = program.command('theme').description('管理主题')
+
+themeCmd
+  .command('list')
+  .description('查看所有可用主题')
+  .action(async () => {
+    const { themes } = await import('../src/ui/theme.js')
+    const config = getConfig()
+    const currentTheme = config.theme || 'dark'
+
+    console.log('')
+    console2.title('🎨 可用主题:')
+    console2.muted('━'.repeat(50))
+
+    Object.keys(themes).forEach((themeName) => {
+      const isCurrent = themeName === currentTheme
+      const prefix = isCurrent ? '●' : '○'
+      const label = themeName === 'dark' ? 'dark (深色)' : 'light (浅色)'
+      const color = themeName === 'dark' ? '#00D9FF' : '#0284C7'
+
+      if (isCurrent) {
+        console.log(`  ${chalk.hex(color)(prefix)} ${chalk.hex(color).bold(label)} ${chalk.gray('(当前)')}`)
+      } else {
+        console.log(`  ${chalk.gray(prefix)} ${label}`)
+      }
+    })
+
+    console2.muted('━'.repeat(50))
+    console.log('')
+  })
+
+themeCmd
+  .argument('[name]', '主题名称 (dark, light)')
+  .description('切换主题')
+  .action((name?: string) => {
+    if (!name) {
+      // 显示当前主题
+      const config = getConfig()
+      const currentTheme = config.theme || 'dark'
+      const label = currentTheme === 'dark' ? 'dark (深色)' : 'light (浅色)'
+      const color = currentTheme === 'dark' ? '#00D9FF' : '#0284C7'
+
+      console.log('')
+      console.log(`当前主题: ${chalk.hex(color).bold(label)}`)
+      console.log('')
+      console2.muted('使用 pls theme list 查看所有主题')
+      console2.muted('使用 pls theme <name> 切换主题')
+      console.log('')
+      return
+    }
+
+    // 切换主题
+    try {
+      setConfigValue('theme', name)
+      const label = name === 'dark' ? 'dark (深色)' : 'light (浅色)'
+      const color = name === 'dark' ? '#00D9FF' : '#0284C7'
+
+      console.log('')
+      console2.success(`已切换到 ${chalk.hex(color).bold(label)} 主题`)
+      console.log('')
+    } catch (error: any) {
+      console.log('')
+      console2.error(error.message)
+      console.log('')
+      process.exit(1)
+    }
+  })
+
 // history 子命令
 const historyCmd = program.command('history').description('查看或管理命令历史')
 
@@ -196,16 +286,16 @@ historyCmd
     history.forEach((item: any, index: number) => {
       const status = item.executed
         ? item.exitCode === 0
-          ? chalk.hex('#10B981')('✓')
-          : chalk.hex('#EF4444')(`✗ 退出码:${item.exitCode}`)
+          ? chalk.hex(getThemeColors().success)('✓')
+          : chalk.hex(getThemeColors().error)(`✗ 退出码:${item.exitCode}`)
         : chalk.gray('(未执行)')
 
-      console.log(`\n${chalk.gray(`${index + 1}.`)} ${chalk.hex('#00D9FF')(item.userPrompt)}`)
+      console.log(`\n${chalk.gray(`${index + 1}.`)} ${chalk.hex(getThemeColors().primary)(item.userPrompt)}`)
 
       // 显示用户修改信息
       if (item.userModified && item.aiGeneratedCommand) {
         console.log(`   ${chalk.dim('AI 生成:')} ${chalk.gray(item.aiGeneratedCommand)}`)
-        console.log(`   ${chalk.dim('用户修改为:')} ${item.command} ${status} ${chalk.yellow('(已修改)')}`)
+        console.log(`   ${chalk.dim('用户修改为:')} ${item.command} ${status} ${chalk.hex(getThemeColors().warning)('(已修改)')}`)
       } else {
         console.log(`   ${chalk.dim('→')} ${item.command} ${status}`)
       }
@@ -277,16 +367,16 @@ historyCmd.action(() => {
   history.forEach((item: any, index: number) => {
     const status = item.executed
       ? item.exitCode === 0
-        ? chalk.hex('#10B981')('✓')
-        : chalk.hex('#EF4444')(`✗ 退出码:${item.exitCode}`)
+        ? chalk.hex(getThemeColors().success)('✓')
+        : chalk.hex(getThemeColors().error)(`✗ 退出码:${item.exitCode}`)
       : chalk.gray('(未执行)')
 
-    console.log(`\n${chalk.gray(`${index + 1}.`)} ${chalk.hex('#00D9FF')(item.userPrompt)}`)
+    console.log(`\n${chalk.gray(`${index + 1}.`)} ${chalk.hex(getThemeColors().primary)(item.userPrompt)}`)
 
     // 显示用户修改信息
     if (item.userModified && item.aiGeneratedCommand) {
       console.log(`   ${chalk.dim('AI 生成:')} ${chalk.gray(item.aiGeneratedCommand)}`)
-      console.log(`   ${chalk.dim('用户修改为:')} ${item.command} ${status} ${chalk.yellow('(已修改)')}`)
+      console.log(`   ${chalk.dim('用户修改为:')} ${item.command} ${status} ${chalk.hex(getThemeColors().warning)('(已修改)')}`)
     } else {
       console.log(`   ${chalk.dim('→')} ${item.command} ${status}`)
     }
@@ -355,19 +445,19 @@ hookCmd
     console.log('')
     console2.title('📊 Shell Hook 状态')
     console2.muted('━'.repeat(40))
-    console.log(`  ${chalk.hex('#00D9FF')('Shell 类型')}: ${status.shellType}`)
-    console.log(`  ${chalk.hex('#00D9FF')('配置文件')}:   ${status.configPath || '未知'}`)
+    console.log(`  ${chalk.hex(getThemeColors().primary)('Shell 类型')}: ${status.shellType}`)
+    console.log(`  ${chalk.hex(getThemeColors().primary)('配置文件')}:   ${status.configPath || '未知'}`)
     console.log(
-      `  ${chalk.hex('#00D9FF')('已安装')}:     ${
-        status.installed ? chalk.hex('#10B981')('是') : chalk.gray('否')
+      `  ${chalk.hex(getThemeColors().primary)('已安装')}:     ${
+        status.installed ? chalk.hex(getThemeColors().success)('是') : chalk.gray('否')
       }`
     )
     console.log(
-      `  ${chalk.hex('#00D9FF')('已启用')}:     ${
-        status.enabled ? chalk.hex('#10B981')('是') : chalk.gray('否')
+      `  ${chalk.hex(getThemeColors().primary)('已启用')}:     ${
+        status.enabled ? chalk.hex(getThemeColors().success)('是') : chalk.gray('否')
       }`
     )
-    console.log(`  ${chalk.hex('#00D9FF')('历史文件')}:   ${status.historyFile}`)
+    console.log(`  ${chalk.hex(getThemeColors().primary)('历史文件')}:   ${status.historyFile}`)
     console2.muted('━'.repeat(40))
 
     if (!status.installed) {
@@ -384,19 +474,19 @@ hookCmd.action(() => {
   console.log('')
   console2.title('📊 Shell Hook 状态')
   console2.muted('━'.repeat(40))
-  console.log(`  ${chalk.hex('#00D9FF')('Shell 类型')}: ${status.shellType}`)
-  console.log(`  ${chalk.hex('#00D9FF')('配置文件')}:   ${status.configPath || '未知'}`)
+  console.log(`  ${chalk.hex(getThemeColors().primary)('Shell 类型')}: ${status.shellType}`)
+  console.log(`  ${chalk.hex(getThemeColors().primary)('配置文件')}:   ${status.configPath || '未知'}`)
   console.log(
-    `  ${chalk.hex('#00D9FF')('已安装')}:     ${
-      status.installed ? chalk.hex('#10B981')('是') : chalk.gray('否')
+    `  ${chalk.hex(getThemeColors().primary)('已安装')}:     ${
+      status.installed ? chalk.hex(getThemeColors().success)('是') : chalk.gray('否')
     }`
   )
   console.log(
-    `  ${chalk.hex('#00D9FF')('已启用')}:     ${
-      status.enabled ? chalk.hex('#10B981')('是') : chalk.gray('否')
+    `  ${chalk.hex(getThemeColors().primary)('已启用')}:     ${
+      status.enabled ? chalk.hex(getThemeColors().success)('是') : chalk.gray('否')
     }`
   )
-  console.log(`  ${chalk.hex('#00D9FF')('历史文件')}:   ${status.historyFile}`)
+  console.log(`  ${chalk.hex(getThemeColors().primary)('历史文件')}:   ${status.historyFile}`)
   console2.muted('━'.repeat(40))
 
   if (!status.installed) {
@@ -443,8 +533,8 @@ chatCmd
       console.log('')
       console2.title('💬 AI 对话模式')
       console2.muted('━'.repeat(40))
-      console.log(`  ${chalk.hex('#00D9FF')('当前对话轮数')}: ${roundCount}`)
-      console.log(`  ${chalk.hex('#00D9FF')('历史文件')}:     ${historyFile}`)
+      console.log(`  ${chalk.hex(getThemeColors().primary)('当前对话轮数')}: ${roundCount}`)
+      console.log(`  ${chalk.hex(getThemeColors().primary)('历史文件')}:     ${historyFile}`)
       console2.muted('━'.repeat(40))
       console.log('')
       console2.muted('用法:')
@@ -667,21 +757,21 @@ program.addHelpText(
   'after',
   `
 ${chalk.bold('示例:')}
-  ${chalk.hex('#00D9FF')('pls 安装 git')}                    让 AI 生成安装 git 的命令
-  ${chalk.hex('#00D9FF')('pls 查找大于 100MB 的文件')}        查找大文件
-  ${chalk.hex('#00D9FF')('pls 删除刚才创建的文件')}          AI 会参考历史记录
-  ${chalk.hex('#00D9FF')('pls --debug 压缩 logs 目录')}      显示调试信息
-  ${chalk.hex('#00D9FF')('pls -m 删除当前目录的空文件夹')}    多步骤模式（AI 自动规划）
-  ${chalk.hex('#00D9FF')('pls chat tar 命令怎么用')}         AI 对话模式
-  ${chalk.hex('#00D9FF')('pls chat clear')}                 清空对话历史
-  ${chalk.hex('#00D9FF')('pls history')}                    查看 pls 命令历史
-  ${chalk.hex('#00D9FF')('pls history clear')}              清空历史记录
-  ${chalk.hex('#00D9FF')('pls hook')}                       查看 shell hook 状态
-  ${chalk.hex('#00D9FF')('pls hook install')}               安装 shell hook（增强功能）
-  ${chalk.hex('#00D9FF')('pls hook uninstall')}             卸载 shell hook
-  ${chalk.hex('#00D9FF')('pls upgrade')}                    升级到最新版本
-  ${chalk.hex('#00D9FF')('pls config')}                     交互式配置
-  ${chalk.hex('#00D9FF')('pls config list')}                查看当前配置
+  ${chalk.hex(getThemeColors().primary)('pls 安装 git')}                    让 AI 生成安装 git 的命令
+  ${chalk.hex(getThemeColors().primary)('pls 查找大于 100MB 的文件')}        查找大文件
+  ${chalk.hex(getThemeColors().primary)('pls 删除刚才创建的文件')}          AI 会参考历史记录
+  ${chalk.hex(getThemeColors().primary)('pls --debug 压缩 logs 目录')}      显示调试信息
+  ${chalk.hex(getThemeColors().primary)('pls -m 删除当前目录的空文件夹')}    多步骤模式（AI 自动规划）
+  ${chalk.hex(getThemeColors().primary)('pls chat tar 命令怎么用')}         AI 对话模式
+  ${chalk.hex(getThemeColors().primary)('pls chat clear')}                 清空对话历史
+  ${chalk.hex(getThemeColors().primary)('pls history')}                    查看 pls 命令历史
+  ${chalk.hex(getThemeColors().primary)('pls history clear')}              清空历史记录
+  ${chalk.hex(getThemeColors().primary)('pls hook')}                       查看 shell hook 状态
+  ${chalk.hex(getThemeColors().primary)('pls hook install')}               安装 shell hook（增强功能）
+  ${chalk.hex(getThemeColors().primary)('pls hook uninstall')}             卸载 shell hook
+  ${chalk.hex(getThemeColors().primary)('pls upgrade')}                    升级到最新版本
+  ${chalk.hex(getThemeColors().primary)('pls config')}                     交互式配置
+  ${chalk.hex(getThemeColors().primary)('pls config list')}                查看当前配置
 `
 )
 

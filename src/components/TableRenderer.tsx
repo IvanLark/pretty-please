@@ -1,7 +1,7 @@
 import React from 'react'
 import { Box, Text } from 'ink'
 import stringWidth from 'string-width'
-import { theme } from '../ui/theme.js'
+import { getCurrentTheme } from '../ui/theme.js'
 import { RenderInline } from './InlineRenderer.js'
 
 interface TableRendererProps {
@@ -56,6 +56,7 @@ function calculateColumnWidths(
  * 表格渲染组件
  */
 function TableRendererInternal({ headers, rows, terminalWidth }: TableRendererProps) {
+  const theme = getCurrentTheme()
   const columnWidths = calculateColumnWidths(headers, rows, terminalWidth)
   const baseColor = theme.text.primary
 

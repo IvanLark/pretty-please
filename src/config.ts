@@ -3,6 +3,18 @@ import path from 'path'
 import os from 'os'
 import readline from 'readline'
 import chalk from 'chalk'
+import { getCurrentTheme } from './ui/theme.js'
+
+// 获取主题颜色
+function getColors() {
+  const theme = getCurrentTheme()
+  return {
+    primary: theme.primary,
+    secondary: theme.secondary,
+    success: theme.success,
+    error: theme.error
+  }
+}
 
 // 配置文件路径
 export const CONFIG_DIR = path.join(os.homedir(), '.please')
@@ -27,6 +39,10 @@ type Provider = (typeof VALID_PROVIDERS)[number]
 const VALID_EDIT_MODES = ['manual', 'auto'] as const
 type EditMode = (typeof VALID_EDIT_MODES)[number]
 
+// 主题
+const VALID_THEMES = ['dark', 'light'] as const
+export type ThemeName = (typeof VALID_THEMES)[number]
+
 /**
  * 配置接口
  */
@@ -40,6 +56,7 @@ export interface Config {
   commandHistoryLimit: number
   shellHistoryLimit: number
   editMode: EditMode
+  theme: ThemeName
 }
 
 /**
@@ -55,6 +72,7 @@ const DEFAULT_CONFIG: Config = {
   commandHistoryLimit: 10,
   shellHistoryLimit: 15,
   editMode: 'manual',
+  theme: 'dark',
 }
 
 /**
@@ -123,6 +141,12 @@ export function setConfigValue(key: string, value: string | boolean | number): C
       throw new Error(`editMode 必须是以下之一: ${VALID_EDIT_MODES.join(', ')}`)
     }
     config.editMode = strValue as EditMode
+  } else if (key === 'theme') {
+    const strValue = String(value)
+    if (!VALID_THEMES.includes(strValue as ThemeName)) {
+      throw new Error(`theme 必须是以下之一: ${VALID_THEMES.join(', ')}`)
+    }
+    config.theme = strValue as ThemeName
   } else if (key === 'apiKey' || key === 'baseUrl' || key === 'model') {
     config[key] = String(value)
   }
@@ -152,23 +176,29 @@ export function maskApiKey(apiKey: string): string {
  */
 export function displayConfig(): void {
   const config = getConfig()
+  const colors = getColors()
   console.log(chalk.bold('\n当前配置:'))
   console.log(chalk.gray('━'.repeat(50)))
-  console.log(`  ${chalk.cyan('apiKey')}:              ${maskApiKey(config.apiKey)}`)
-  console.log(`  ${chalk.cyan('baseUrl')}:             ${config.baseUrl}`)
-  console.log(`  ${chalk.cyan('provider')}:            ${config.provider}`)
-  console.log(`  ${chalk.cyan('model')}:               ${config.model}`)
+  console.log(`  ${chalk.hex(colors.primary)('apiKey')}:              ${maskApiKey(config.apiKey)}`)
+  console.log(`  ${chalk.hex(colors.primary)('baseUrl')}:             ${config.baseUrl}`)
+  console.log(`  ${chalk.hex(colors.primary)('provider')}:            ${config.provider}`)
+  console.log(`  ${chalk.hex(colors.primary)('model')}:               ${config.model}`)
   console.log(
-    `  ${chalk.cyan('shellHook')}:           ${config.shellHook ? chalk.green('已启用') : chalk.gray('未启用')}`
+    `  ${chalk.hex(colors.primary)('shellHook')}:           ${config.shellHook ? chalk.hex(colors.success)('已启用') : chalk.gray('未启用')}`
   )
   console.log(
-    `  ${chalk.cyan('editMode')}:            ${
-      config.editMode === 'auto' ? chalk.hex('#00D9FF')('auto (自动编辑)') : chalk.gray('manual (按E编辑)')
+    `  ${chalk.hex(colors.primary)('editMode')}:            ${
+      config.editMode === 'auto' ? chalk.hex(colors.primary)('auto (自动编辑)') : chalk.gray('manual (按E编辑)')
     }`
   )
-  console.log(`  ${chalk.cyan('chatHistoryLimit')}:    ${config.chatHistoryLimit} 轮`)
-  console.log(`  ${chalk.cyan('commandHistoryLimit')}: ${config.commandHistoryLimit} 条`)
-  console.log(`  ${chalk.cyan('shellHistoryLimit')}:   ${config.shellHistoryLimit} 条`)
+  console.log(`  ${chalk.hex(colors.primary)('chatHistoryLimit')}:    ${config.chatHistoryLimit} 轮`)
+  console.log(`  ${chalk.hex(colors.primary)('commandHistoryLimit')}: ${config.commandHistoryLimit} 条`)
+  console.log(`  ${chalk.hex(colors.primary)('shellHistoryLimit')}:   ${config.shellHistoryLimit} 条`)
+  console.log(
+    `  ${chalk.hex(colors.primary)('theme')}:               ${
+      config.theme === 'dark' ? chalk.hex(colors.primary)('dark (深色)') : chalk.hex(colors.primary)('light (浅色)')
+    }`
+  )
   console.log(chalk.gray('━'.repeat(50)))
   console.log(chalk.gray(`配置文件: ${CONFIG_FILE}\n`))
 }
@@ -200,19 +230,20 @@ function question(rl: readline.Interface, prompt: string): Promise<string> {
 export async function runConfigWizard(): Promise<void> {
   const rl = createReadlineInterface()
   const config = getConfig()
+  const colors = getColors()
 
-  console.log(chalk.bold.hex('#00D9FF')('\n🔧 Pretty Please 配置向导'))
+  console.log(chalk.bold.hex(colors.primary)('\n🔧 Pretty Please 配置向导'))
   console.log(chalk.gray('━'.repeat(50)))
   console.log(chalk.gray('直接回车使用默认值，输入值后回车确认\n'))
 
   try {
     // 1. Provider
     const providerHint = chalk.gray(`(可选: ${VALID_PROVIDERS.join(', ')})`)
-    const providerPrompt = `${chalk.cyan('Provider')} ${providerHint}\n${chalk.gray('默认:')} ${chalk.yellow(config.provider)} ${chalk.gray('→')} `
+    const providerPrompt = `${chalk.hex(colors.primary)('Provider')} ${providerHint}\n${chalk.gray('默认:')} ${chalk.hex(colors.secondary)(config.provider)} ${chalk.gray('→')} `
     const provider = await question(rl, providerPrompt)
     if (provider.trim()) {
       if (!VALID_PROVIDERS.includes(provider.trim() as Provider)) {
-        console.log(chalk.hex('#EF4444')(`\n✗ 无效的 provider，必须是以下之一: ${VALID_PROVIDERS.join(', ')}`))
+        console.log(chalk.hex(colors.error)(`\n✗ 无效的 provider，必须是以下之一: ${VALID_PROVIDERS.join(', ')}`))
         console.log()
         rl.close()
         return
@@ -221,7 +252,7 @@ export async function runConfigWizard(): Promise<void> {
     }
 
     // 2. Base URL
-    const baseUrlPrompt = `${chalk.cyan('API Base URL')}\n${chalk.gray('默认:')} ${chalk.yellow(config.baseUrl)} ${chalk.gray('→')} `
+    const baseUrlPrompt = `${chalk.hex(colors.primary)('API Base URL')}\n${chalk.gray('默认:')} ${chalk.hex(colors.secondary)(config.baseUrl)} ${chalk.gray('→')} `
     const baseUrl = await question(rl, baseUrlPrompt)
     if (baseUrl.trim()) {
       config.baseUrl = baseUrl.trim()
@@ -229,21 +260,21 @@ export async function runConfigWizard(): Promise<void> {
 
     // 3. API Key
     const currentKeyDisplay = config.apiKey ? maskApiKey(config.apiKey) : '(未设置)'
-    const apiKeyPrompt = `${chalk.cyan('API Key')} ${chalk.gray(`(当前: ${currentKeyDisplay})`)}\n${chalk.gray('→')} `
+    const apiKeyPrompt = `${chalk.hex(colors.primary)('API Key')} ${chalk.gray(`(当前: ${currentKeyDisplay})`)}\n${chalk.gray('→')} `
     const apiKey = await question(rl, apiKeyPrompt)
     if (apiKey.trim()) {
       config.apiKey = apiKey.trim()
     }
 
     // 4. Model
-    const modelPrompt = `${chalk.cyan('Model')}\n${chalk.gray('默认:')} ${chalk.yellow(config.model)} ${chalk.gray('→')} `
+    const modelPrompt = `${chalk.hex(colors.primary)('Model')}\n${chalk.gray('默认:')} ${chalk.hex(colors.secondary)(config.model)} ${chalk.gray('→')} `
     const model = await question(rl, modelPrompt)
     if (model.trim()) {
       config.model = model.trim()
     }
 
     // 5. Shell Hook
-    const shellHookPrompt = `${chalk.cyan('启用 Shell Hook')} ${chalk.gray('(记录终端命令历史)')}\n${chalk.gray('默认:')} ${chalk.yellow(config.shellHook ? 'true' : 'false')} ${chalk.gray('→')} `
+    const shellHookPrompt = `${chalk.hex(colors.primary)('启用 Shell Hook')} ${chalk.gray('(记录终端命令历史)')}\n${chalk.gray('默认:')} ${chalk.hex(colors.secondary)(config.shellHook ? 'true' : 'false')} ${chalk.gray('→')} `
     const shellHook = await question(rl, shellHookPrompt)
     if (shellHook.trim()) {
       config.shellHook = shellHook.trim() === 'true'
@@ -251,11 +282,11 @@ export async function runConfigWizard(): Promise<void> {
 
     // 6. Edit Mode
     const editModeHint = chalk.gray('(manual=按E编辑, auto=自动编辑)')
-    const editModePrompt = `${chalk.cyan('编辑模式')} ${editModeHint}\n${chalk.gray('默认:')} ${chalk.yellow(config.editMode)} ${chalk.gray('→')} `
+    const editModePrompt = `${chalk.hex(colors.primary)('编辑模式')} ${editModeHint}\n${chalk.gray('默认:')} ${chalk.hex(colors.secondary)(config.editMode)} ${chalk.gray('→')} `
     const editMode = await question(rl, editModePrompt)
     if (editMode.trim()) {
       if (!VALID_EDIT_MODES.includes(editMode.trim() as EditMode)) {
-        console.log(chalk.hex('#EF4444')(`\n✗ 无效的 editMode，必须是: manual 或 auto`))
+        console.log(chalk.hex(colors.error)(`\n✗ 无效的 editMode，必须是: manual 或 auto`))
         console.log()
         rl.close()
         return
@@ -264,7 +295,7 @@ export async function runConfigWizard(): Promise<void> {
     }
 
     // 7. Chat History Limit
-    const chatHistoryPrompt = `${chalk.cyan('Chat 历史保留轮数')}\n${chalk.gray('默认:')} ${chalk.yellow(config.chatHistoryLimit)} ${chalk.gray('→')} `
+    const chatHistoryPrompt = `${chalk.hex(colors.primary)('Chat 历史保留轮数')}\n${chalk.gray('默认:')} ${chalk.hex(colors.secondary)(config.chatHistoryLimit)} ${chalk.gray('→')} `
     const chatHistoryLimit = await question(rl, chatHistoryPrompt)
     if (chatHistoryLimit.trim()) {
       const num = parseInt(chatHistoryLimit.trim(), 10)
@@ -274,7 +305,7 @@ export async function runConfigWizard(): Promise<void> {
     }
 
     // 8. Command History Limit
-    const commandHistoryPrompt = `${chalk.cyan('命令历史保留条数')}\n${chalk.gray('默认:')} ${chalk.yellow(config.commandHistoryLimit)} ${chalk.gray('→')} `
+    const commandHistoryPrompt = `${chalk.hex(colors.primary)('命令历史保留条数')}\n${chalk.gray('默认:')} ${chalk.hex(colors.secondary)(config.commandHistoryLimit)} ${chalk.gray('→')} `
     const commandHistoryLimit = await question(rl, commandHistoryPrompt)
     if (commandHistoryLimit.trim()) {
       const num = parseInt(commandHistoryLimit.trim(), 10)
@@ -284,7 +315,7 @@ export async function runConfigWizard(): Promise<void> {
     }
 
     // 9. Shell History Limit
-    const shellHistoryPrompt = `${chalk.cyan('Shell 历史保留条数')}\n${chalk.gray('默认:')} ${chalk.yellow(config.shellHistoryLimit)} ${chalk.gray('→')} `
+    const shellHistoryPrompt = `${chalk.hex(colors.primary)('Shell 历史保留条数')}\n${chalk.gray('默认:')} ${chalk.hex(colors.secondary)(config.shellHistoryLimit)} ${chalk.gray('→')} `
     const shellHistoryLimit = await question(rl, shellHistoryPrompt)
     if (shellHistoryLimit.trim()) {
       const num = parseInt(shellHistoryLimit.trim(), 10)
@@ -296,12 +327,12 @@ export async function runConfigWizard(): Promise<void> {
     saveConfig(config)
 
     console.log('\n' + chalk.gray('━'.repeat(50)))
-    console.log(chalk.hex('#10B981')('✅ 配置已保存'))
+    console.log(chalk.hex(getColors().success)('✅ 配置已保存'))
     console.log(chalk.gray(`   ${CONFIG_FILE}`))
     console.log()
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    console.log(chalk.hex('#EF4444')(`\n✗ 配置失败: ${message}`))
+    console.log(chalk.hex(getColors().error)(`\n✗ 配置失败: ${message}`))
     console.log()
   } finally {
     rl.close()

@@ -2,23 +2,27 @@ import React from 'react'
 import { Text, Box } from 'ink'
 import { common, createLowlight } from 'lowlight'
 import type { Root, Element, Text as HastText, ElementContent, RootContent } from 'hast'
-import { theme } from '../ui/theme.js'
+import { getCurrentTheme, type Theme } from '../ui/theme.js'
 
 // 创建 lowlight 实例
 const lowlight = createLowlight(common)
 
-// 语法高亮颜色映射
-const syntaxColors: Record<string, string> = {
-  'hljs-keyword': theme.code.keyword,
-  'hljs-string': theme.code.string,
-  'hljs-function': theme.code.function,
-  'hljs-comment': theme.code.comment,
-  'hljs-number': theme.primary,
-  'hljs-built_in': theme.secondary,
-  'hljs-title': theme.accent,
-  'hljs-variable': theme.text.primary,
-  'hljs-type': theme.info,
-  'hljs-operator': theme.text.secondary,
+/**
+ * 获取语法高亮颜色映射
+ */
+function getSyntaxColors(theme: Theme): Record<string, string> {
+  return {
+    'hljs-keyword': theme.code.keyword,
+    'hljs-string': theme.code.string,
+    'hljs-function': theme.code.function,
+    'hljs-comment': theme.code.comment,
+    'hljs-number': theme.primary,
+    'hljs-built_in': theme.secondary,
+    'hljs-title': theme.accent,
+    'hljs-variable': theme.text.primary,
+    'hljs-type': theme.info,
+    'hljs-operator': theme.text.secondary,
+  }
 }
 
 /**
@@ -26,7 +30,9 @@ const syntaxColors: Record<string, string> = {
  */
 function renderHastNode(
   node: Root | Element | HastText | RootContent,
-  inheritedColor: string | undefined
+  inheritedColor: string | undefined,
+  syntaxColors: Record<string, string>,
+  theme: Theme
 ): React.ReactNode {
   if (node.type === 'text') {
     const color = inheritedColor || theme.code.text
@@ -51,7 +57,7 @@ function renderHastNode(
     // 递归渲染子节点
     const children = node.children?.map((child: ElementContent, index: number) => (
       <React.Fragment key={index}>
-        {renderHastNode(child, colorToPassDown)}
+        {renderHastNode(child, colorToPassDown, syntaxColors, theme)}
       </React.Fragment>
     ))
 
@@ -65,7 +71,7 @@ function renderHastNode(
 
     return node.children?.map((child: RootContent, index: number) => (
       <React.Fragment key={index}>
-        {renderHastNode(child, inheritedColor)}
+        {renderHastNode(child, inheritedColor, syntaxColors, theme)}
       </React.Fragment>
     ))
   }
@@ -76,13 +82,13 @@ function renderHastNode(
 /**
  * 高亮并渲染一行代码
  */
-function highlightLine(line: string, language: string | null): React.ReactNode {
+function highlightLine(line: string, language: string | null, syntaxColors: Record<string, string>, theme: Theme): React.ReactNode {
   try {
     const highlighted = !language || !lowlight.registered(language)
       ? lowlight.highlightAuto(line)
       : lowlight.highlight(language, line)
 
-    const rendered = renderHastNode(highlighted, undefined)
+    const rendered = renderHastNode(highlighted, undefined, syntaxColors, theme)
     return rendered !== null ? rendered : line
   } catch {
     return line
@@ -99,12 +105,14 @@ interface ColorizeCodeProps {
  * 代码高亮组件
  */
 function ColorizeCodeInternal({ code, language = null, showLineNumbers = false }: ColorizeCodeProps) {
+  const theme = getCurrentTheme()
+  const syntaxColors = getSyntaxColors(theme)
   const codeToHighlight = code.replace(/\n$/, '')
   const lines = codeToHighlight.split('\n')
   const padWidth = String(lines.length).length
 
   const renderedLines = lines.map((line, index) => {
-    const contentToRender = highlightLine(line, language)
+    const contentToRender = highlightLine(line, language, syntaxColors, theme)
 
     return (
       <Box key={index} minHeight={1}>
