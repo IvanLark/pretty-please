@@ -30,6 +30,12 @@ import {
   performUpgrade,
 } from '../src/upgrade.js'
 import { getCurrentTheme } from '../src/ui/theme.js'
+import {
+  addAlias,
+  removeAlias,
+  displayAliases,
+  resolveAlias,
+} from '../src/alias.js'
 
 // 获取主题颜色的辅助函数
 function getThemeColors() {
@@ -137,6 +143,7 @@ program
   .description('AI 驱动的命令行工具，将自然语言转换为可执行的 Shell 命令')
   .version(packageJson.version, '-v, --version', '显示版本号')
   .helpOption('-h, --help', '显示帮助信息')
+  .allowUnknownOption(true)  // 允许未知选项（用于别名参数传递）
 
 // config 子命令
 const configCmd = program.command('config').description('管理配置')
@@ -513,6 +520,59 @@ program
     process.exit(success ? 0 : 1)
   })
 
+// alias 子命令
+const aliasCmd = program.command('alias').description('管理命令别名')
+
+// 获取所有子命令名称（用于检测冲突）
+function getReservedCommands(): string[] {
+  return program.commands.map((cmd) => cmd.name())
+}
+
+aliasCmd
+  .command('list')
+  .description('列出所有别名')
+  .action(() => {
+    displayAliases()
+  })
+
+aliasCmd
+  .command('add <name> <prompt>')
+  .description('添加别名（prompt 支持 {{param}} 或 {{param:default}} 参数模板）')
+  .option('-d, --description <desc>', '别名描述')
+  .action((name, prompt, options) => {
+    try {
+      addAlias(name, prompt, options.description, getReservedCommands())
+      console.log('')
+      console2.success(`已添加别名: ${name}`)
+      console.log(`  ${chalk.gray('→')} ${prompt}`)
+      console.log('')
+    } catch (error: any) {
+      console.log('')
+      console2.error(error.message)
+      console.log('')
+      process.exit(1)
+    }
+  })
+
+aliasCmd
+  .command('remove <name>')
+  .description('删除别名')
+  .action((name) => {
+    const removed = removeAlias(name)
+    console.log('')
+    if (removed) {
+      console2.success(`已删除别名: ${name}`)
+    } else {
+      console2.error(`别名不存在: ${name}`)
+    }
+    console.log('')
+  })
+
+// 默认 alias 命令（显示列表）
+aliasCmd.action(() => {
+  displayAliases()
+})
+
 // chat 子命令
 const chatCmd = program.command('chat').description('AI 对话模式，问答、讲解命令')
 
@@ -588,12 +648,29 @@ program
       return
     }
 
-    const prompt = promptArgs.join(' ')
+    let prompt = promptArgs.join(' ')
 
     if (!prompt.trim()) {
       console.log('')
       console2.error('请提供你想执行的操作描述')
       console2.muted('示例: pls 安装 git')
+      console.log('')
+      process.exit(1)
+    }
+
+    // 尝试解析别名（支持 pls disk 和 pls @disk 两种格式）
+    try {
+      const aliasResult = resolveAlias(prompt)
+      if (aliasResult.resolved) {
+        prompt = aliasResult.prompt
+        if (options.debug) {
+          console.log('')
+          console2.muted(`别名解析: ${aliasResult.aliasName} → ${prompt}`)
+        }
+      }
+    } catch (error: any) {
+      console.log('')
+      console2.error(error.message)
       console.log('')
       process.exit(1)
     }
@@ -786,11 +863,13 @@ ${chalk.bold('示例:')}
   ${chalk.hex(getThemeColors().primary)('pls 查找大于 100MB 的文件')}        查找大文件
   ${chalk.hex(getThemeColors().primary)('pls 删除刚才创建的文件')}          AI 会参考历史记录
   ${chalk.hex(getThemeColors().primary)('pls --debug 压缩 logs 目录')}      显示调试信息
-  ${chalk.hex(getThemeColors().primary)('pls -m 删除当前目录的空文件夹')}    多步骤模式（AI 自动规划）
   ${chalk.hex(getThemeColors().primary)('pls chat tar 命令怎么用')}         AI 对话模式
   ${chalk.hex(getThemeColors().primary)('pls chat clear')}                 清空对话历史
   ${chalk.hex(getThemeColors().primary)('pls history')}                    查看 pls 命令历史
   ${chalk.hex(getThemeColors().primary)('pls history clear')}              清空历史记录
+  ${chalk.hex(getThemeColors().primary)('pls alias')}                      查看命令别名
+  ${chalk.hex(getThemeColors().primary)('pls alias add disk "查看磁盘"')}   添加别名
+  ${chalk.hex(getThemeColors().primary)('pls disk')}                       使用别名（等同于 pls @disk）
   ${chalk.hex(getThemeColors().primary)('pls hook')}                       查看 shell hook 状态
   ${chalk.hex(getThemeColors().primary)('pls hook install')}               安装 shell hook（增强功能）
   ${chalk.hex(getThemeColors().primary)('pls hook uninstall')}             卸载 shell hook

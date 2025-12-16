@@ -44,6 +44,14 @@ const VALID_THEMES = ['dark', 'light'] as const
 export type ThemeName = (typeof VALID_THEMES)[number]
 
 /**
+ * 别名配置接口
+ */
+export interface AliasConfig {
+  prompt: string
+  description?: string
+}
+
+/**
  * 配置接口
  */
 export interface Config {
@@ -57,6 +65,7 @@ export interface Config {
   shellHistoryLimit: number
   editMode: EditMode
   theme: ThemeName
+  aliases: Record<string, AliasConfig>
 }
 
 /**
@@ -73,6 +82,7 @@ const DEFAULT_CONFIG: Config = {
   shellHistoryLimit: 15,
   editMode: 'manual',
   theme: 'dark',
+  aliases: {},
 }
 
 /**

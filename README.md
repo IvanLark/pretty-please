@@ -14,6 +14,7 @@
 - 📜 **三种历史记录** - 命令历史、对话历史、Shell 历史统一管理
 - 🎨 **精美界面** - 基于 React + Ink 的终端 UI，Markdown 渲染
 - 🌗 **主题切换** - 支持 dark/light 主题，适配不同终端背景
+- 🏷️ **命令别名** - 常用操作一键触发，支持参数模板
 - 🔧 **多 Provider 支持** - 支持 OpenAI、DeepSeek、Anthropic 等多种 AI
 - 🚀 **一键升级** - 内置 `pls upgrade` 命令，自动更新到最新版本
 
@@ -283,6 +284,7 @@ pls config set <key> <value>  # 设置单个配置项
 | `commandHistoryLimit` | 命令历史保留条数 | `10` |
 | `shellHistoryLimit` | Shell 历史保留条数 | `15` |
 | `theme` | 界面主题（dark/light） | `dark` |
+| `aliases` | 命令别名配置 | `{}` |
 
 ### 支持的 Provider
 
@@ -330,6 +332,55 @@ pls theme light        # 切换到浅色主题
 
 ```bash
 pls config set theme light
+```
+
+## 🏷️ 命令别名
+
+将常用的操作保存为别名，一键触发：
+
+### 基本使用
+
+```bash
+# 添加简单别名
+pls alias add disk "查看磁盘使用情况，按使用率排序"
+pls alias add mem "查看内存使用最高的 10 个进程"
+
+# 使用别名（两种格式都支持）
+pls disk
+pls @disk
+
+# 查看所有别名
+pls alias
+pls alias list
+
+# 删除别名
+pls alias remove disk
+```
+
+### 参数模板
+
+支持动态参数，让别名更灵活：
+
+```bash
+# 添加带参数的别名
+pls alias add taillog "查看 {{file}} 的最后 {{lines:20}} 行日志"
+
+# 使用时传参
+pls taillog --file=/var/log/system.log                # lines 使用默认值 20
+pls taillog --file=/var/log/system.log --lines=50     # 自定义 lines
+pls taillog file=/var/log/nginx.log lines=100         # 不带 -- 也可以
+```
+
+参数格式说明：
+- `{{param}}` - 必填参数，不提供会报错
+- `{{param:default}}` - 可选参数，有默认值
+
+### 别名 + 额外描述
+
+别名后可以追加额外的描述：
+
+```bash
+pls disk 显示详情      # 等同于 pls 查看磁盘使用情况，按使用率排序 显示详情
 ```
 
 ## 🚀 版本升级
@@ -396,6 +447,12 @@ pls theme                # 查看当前主题
 pls theme list           # 查看所有主题
 pls theme <dark|light>   # 切换主题
 
+# 别名
+pls alias                # 查看所有别名
+pls alias list           # 同上
+pls alias add <name> "<prompt>"  # 添加别名
+pls alias remove <name>  # 删除别名
+
 # 升级
 pls upgrade              # 升级到最新版本
 ```
@@ -427,6 +484,8 @@ pretty-please/
 │   ├── shell-hook.ts        # Shell 集成
 │   ├── builtin-detector.ts  # Shell builtin 检测
 │   ├── sysinfo.ts           # 系统信息采集
+│   ├── upgrade.ts           # 版本升级模块
+│   ├── alias.ts             # 命令别名管理
 │   ├── components/          # React Ink 组件
 │   │   ├── MultiStepCommandGenerator.tsx
 │   │   ├── Chat.tsx
