@@ -78,9 +78,10 @@ process.on('beforeExit', () => {
 /**
  * 执行命令（原生版本）
  */
-function executeCommand(command: string): Promise<{ exitCode: number; output: string }> {
+function executeCommand(command: string): Promise<{ exitCode: number; output: string; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    let output = ''
+    let stdout = ''
+    let stderr = ''
     let hasOutput = false
 
     console.log('') // 空行
@@ -91,16 +92,17 @@ function executeCommand(command: string): Promise<{ exitCode: number; output: st
     const boxWidth = Math.max(maxContentWidth + 4, console2.getDisplayWidth('生成命令') + 6, 20)
     console2.printSeparator('输出', boxWidth)
 
-    const child = exec(command)
+    // 使用 bash 并启用 pipefail，确保管道中任何命令失败都能正确返回非零退出码
+    const child = exec(`set -o pipefail; ${command}`, { shell: '/bin/bash' })
 
     child.stdout?.on('data', (data) => {
-      output += data
+      stdout += data
       hasOutput = true
       process.stdout.write(data)
     })
 
     child.stderr?.on('data', (data) => {
-      output += data
+      stderr += data
       hasOutput = true
       process.stderr.write(data)
     })
@@ -109,7 +111,7 @@ function executeCommand(command: string): Promise<{ exitCode: number; output: st
       if (hasOutput) {
         console2.printSeparator('', boxWidth)
       }
-      resolve({ exitCode: code || 0, output })
+      resolve({ exitCode: code || 0, output: stdout + stderr, stdout, stderr })
     })
 
     child.on('error', (err) => {
@@ -118,7 +120,7 @@ function executeCommand(command: string): Promise<{ exitCode: number; output: st
       }
       console2.error(err.message)
       console2.printSeparator('', boxWidth)
-      resolve({ exitCode: 1, output: err.message })
+      resolve({ exitCode: 1, output: err.message, stdout: '', stderr: err.message })
     })
   })
 }
@@ -670,8 +672,15 @@ program
 
           // 执行命令
           const execStart = Date.now()
-          const { exitCode, output } = await executeCommand(stepResult.command)
+          const { exitCode, output, stdout, stderr } = await executeCommand(stepResult.command)
           const execDuration = Date.now() - execStart
+
+          // 判断命令是否成功
+          // 退出码 141 = 128 + 13 (SIGPIPE)，是管道正常关闭时的信号
+          // 例如：ps aux | head -3，head 读完 3 行就关闭管道，ps 收到 SIGPIPE
+          // 但如果退出码是 141 且没有 stdout 输出，说明可能是真正的错误
+          const isSigpipeWithOutput = exitCode === 141 && stdout.trim().length > 0
+          const isSuccess = exitCode === 0 || isSigpipeWithOutput
 
           // 保存到执行历史
           const executedStep: ExecutedStep = {
@@ -698,7 +707,7 @@ program
 
           // 显示结果
           console.log('')
-          if (exitCode === 0) {
+          if (isSuccess) {
             if (currentStepNumber === 1 && stepResult.needsContinue !== true) {
               // 单步命令
               console2.success(`执行完成 ${console2.formatDuration(execDuration)}`)
