@@ -698,3 +698,103 @@ Shell: ${sysInfo.shell}
 
   return info
 }
+
+// ================== 批量远程执行 ==================
+
+/**
+ * 批量远程执行结果
+ */
+export interface BatchRemoteResult {
+  server: string
+  command: string
+  exitCode: number
+  stdout: string
+  stderr: string
+  output: string
+  sysInfo: RemoteSysInfo
+}
+
+/**
+ * 批量远程执行命令
+ * 每个服务器单独生成命令，支持异构环境
+ */
+export async function generateBatchRemoteCommands(
+  serverNames: string[],
+  userPrompt: string,
+  options: { debug?: boolean } = {}
+): Promise<Array<{ server: string; command: string; sysInfo: RemoteSysInfo }>> {
+  const { generateMultiStepCommand } = await import('./multi-step.js')
+  const { fetchRemoteShellHistory } = await import('./remote-history.js')
+
+  // 1. 验证所有服务器是否存在
+  const invalidServers = serverNames.filter(name => !getRemote(name))
+  if (invalidServers.length > 0) {
+    throw new Error(`以下服务器不存在: ${invalidServers.join(', ')}`)
+  }
+
+  // 2. 并发采集所有服务器的系统信息
+  const servers = await Promise.all(
+    serverNames.map(async (name) => ({
+      name,
+      sysInfo: await collectRemoteSysInfo(name),
+      shellHistory: await fetchRemoteShellHistory(name),
+    }))
+  )
+
+  // 3. 并发为每个服务器生成命令
+  const commandResults = await Promise.all(
+    servers.map(async (server) => {
+      const remoteContext: any = {
+        name: server.name,
+        sysInfo: server.sysInfo,
+        shellHistory: server.shellHistory,
+      }
+
+      const result = await generateMultiStepCommand(
+        userPrompt,
+        [],  // 批量执行不支持多步骤，只生成单个命令
+        { debug: options.debug, remoteContext }
+      )
+
+      return {
+        server: server.name,
+        command: result.stepData.command,
+        sysInfo: server.sysInfo,
+      }
+    })
+  )
+
+  return commandResults
+}
+
+/**
+ * 执行批量远程命令
+ */
+export async function executeBatchRemoteCommands(
+  commands: Array<{ server: string; command: string; sysInfo: RemoteSysInfo }>
+): Promise<BatchRemoteResult[]> {
+  // 并发执行所有命令
+  const results = await Promise.all(
+    commands.map(async ({ server, command, sysInfo }) => {
+      let stdout = ''
+      let stderr = ''
+
+      const result = await sshExec(server, command, {
+        onStdout: (data) => { stdout += data },
+        onStderr: (data) => { stderr += data },
+      })
+
+      return {
+        server,
+        command,
+        exitCode: result.exitCode,
+        stdout,
+        stderr,
+        output: stdout + stderr,
+        sysInfo,
+      }
+    })
+  )
+
+  return results
+}

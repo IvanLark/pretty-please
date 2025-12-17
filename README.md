@@ -363,6 +363,71 @@ pls -r myserver 查找大于 100MB 的日志文件
 pls -r 查看当前目录的文件
 ```
 
+### 批量远程执行 ⭐
+
+在多台服务器上并发执行同一个任务，每个服务器自动生成适配其环境的命令：
+
+```bash
+# 批量执行（逗号分隔服务器名）
+pls -r web1,web2,web3 查看 nginx 状态
+pls -r server1,server2 查看磁盘使用情况
+pls -r prod1,prod2,prod3 重启应用服务
+```
+
+**特点：**
+- 🚀 **并发执行** - 所有服务器同时生成命令和执行，速度快
+- 🔧 **自动适配** - 每个服务器根据其系统环境生成独立命令（支持异构环境）
+- 📊 **清晰展示** - 显示每个服务器的命令和执行结果
+- 📝 **历史记录** - 自动记录到每个服务器的历史
+
+**执行流程示例：**
+
+```bash
+$ pls -r web1,web2,web3 查看 nginx 状态
+
+正在为 3 台服务器生成命令...
+
+✓ 命令生成完成
+
+web1 (linux):
+  systemctl status nginx | grep Active
+
+web2 (linux):
+  systemctl status nginx | grep Active
+
+web3 (linux):
+  systemctl status nginx | grep Active
+
+将在 3 台服务器执行以上命令
+执行？ [回车执行 / Ctrl+C 取消]
+
+正在执行...
+
+执行完成:
+
+  ✓ web1 (退出码: 0)
+  ✓ web2 (退出码: 0)
+  ✗ web3 (退出码: 3)
+
+─── web1 ───
+   Active: active (running)
+
+─── web2 ───
+   Active: active (running)
+
+─── web3 ───
+   Active: inactive (dead)
+```
+
+**退出码：**
+- `0` - 全部成功
+- `1` - 部分失败
+- `2` - 全部失败
+
+**限制：**
+- 批量执行模式不支持多步骤命令（只生成单个命令）
+- 不支持命令编辑（直接执行生成的命令）
+
 ### 远程 Shell Hook
 
 在远程服务器上安装 Shell Hook，让 AI 了解你在远程服务器上的操作历史：

@@ -46,6 +46,8 @@ import {
   collectRemoteSysInfo,
   setRemoteWorkDir,
   getRemoteWorkDir,
+  generateBatchRemoteCommands,
+  executeBatchRemoteCommands,
 } from '../src/remote.js'
 import {
   addRemoteHistory,
@@ -1083,8 +1085,9 @@ program
     // options.remote 可能是：
     // - undefined: 没有使用 -r
     // - true: 使用了 -r 但没有指定名称（使用默认）
-    // - string: 使用了 -r 并指定了名称
+    // - string: 使用了 -r 并指定了名称（支持逗号分隔的多个服务器）
     let remoteName: string | undefined
+    let remoteNames: string[] | undefined  // 批量执行时的服务器列表
     if (options.remote !== undefined) {
       if (options.remote === true) {
         // 使用默认服务器
@@ -1099,22 +1102,132 @@ program
         }
         remoteName = config.defaultRemote
       } else {
-        remoteName = options.remote
-      }
+        // 检查是否为批量执行（逗号分隔的服务器名）
+        if (options.remote.includes(',')) {
+          remoteNames = options.remote.split(',').map(s => s.trim()).filter(s => s.length > 0)
 
-      // 检查服务器是否存在
-      const remote = getRemote(remoteName!)
-      if (!remote) {
-        console.log('')
-        console2.error(`远程服务器不存在: ${remoteName}`)
-        console2.muted('使用 pls remote add <name> <user@host> 添加服务器')
-        console.log('')
-        process.exit(1)
+          // 验证所有服务器是否存在
+          const invalidServers = remoteNames!.filter(name => !getRemote(name))
+          if (invalidServers.length > 0) {
+            console.log('')
+            console2.error(`以下服务器不存在: ${invalidServers.join(', ')}`)
+            console2.muted('使用 pls remote list 查看所有服务器')
+            console2.muted('使用 pls remote add <name> <user@host> 添加服务器')
+            console.log('')
+            process.exit(1)
+          }
+        } else {
+          remoteName = options.remote
+
+          // 检查服务器是否存在
+          const remote = getRemote(remoteName!)
+          if (!remote) {
+            console.log('')
+            console2.error(`远程服务器不存在: ${remoteName}`)
+            console2.muted('使用 pls remote add <name> <user@host> 添加服务器')
+            console.log('')
+            process.exit(1)
+          }
+        }
       }
     }
 
     // 懒加载 MultiStepCommandGenerator 组件（避免启动时加载 React/Ink）
     ;(async () => {
+      // 批量远程执行模式
+      if (remoteNames && remoteNames.length > 0) {
+        console.log('')
+        console2.info(`正在为 ${remoteNames.length} 台服务器生成命令...`)
+        console.log('')
+
+        try {
+          // 1. 并发生成命令
+          const commands = await generateBatchRemoteCommands(remoteNames, prompt, { debug: options.debug })
+
+          // 2. 显示生成的命令
+          console2.success('✓ 命令生成完成\n')
+          const theme = getCurrentTheme()
+          commands.forEach(({ server, command, sysInfo }) => {
+            console.log(chalk.hex(theme.primary)(`${server}`) + chalk.gray(` (${sysInfo.os}):`))
+            console.log(chalk.hex(theme.secondary)(`  ${command}`))
+          })
+          console.log('')
+
+          // 3. 询问用户确认
+          const readline = await import('readline')
+          const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout,
+          })
+
+          const confirmed = await new Promise<boolean>((resolve) => {
+            console.log(chalk.gray(`将在 ${remoteNames!.length} 台服务器执行以上命令`))
+            rl.question(chalk.gray('执行？ [回车执行 / Ctrl+C 取消] '), (answer) => {
+              rl.close()
+              resolve(true)
+            })
+          })
+
+          if (!confirmed) {
+            console.log('')
+            console2.muted('已取消执行')
+            console.log('')
+            process.exit(0)
+          }
+
+          // 4. 并发执行
+          console.log('')
+          console2.info('正在执行...')
+          const results = await executeBatchRemoteCommands(commands)
+
+          // 5. 显示执行结果摘要
+          console.log('')
+          console2.info('执行完成:\n')
+          results.forEach(({ server, exitCode }) => {
+            const icon = exitCode === 0 ? '✓' : '✗'
+            const color = exitCode === 0 ? theme.success : theme.error
+            console.log(`  ${chalk.hex(color)(icon)} ${server} ${chalk.gray(`(退出码: ${exitCode})`)}`)
+          })
+
+          // 6. 显示每个服务器的详细输出
+          console.log('')
+          results.forEach(({ server, output }) => {
+            console.log(chalk.hex(theme.primary)(`─── ${server} ───`))
+            console.log(output || chalk.gray('(无输出)'))
+          })
+
+          // 7. 记录到历史
+          results.forEach(({ server, command, exitCode, output }) => {
+            addRemoteHistory(server, {
+              userPrompt: prompt,
+              command,
+              aiGeneratedCommand: command,  // 批量执行无编辑功能
+              userModified: false,
+              executed: true,
+              exitCode,
+              output,
+            })
+          })
+
+          // 8. 根据结果决定退出码
+          const allSuccess = results.every(r => r.exitCode === 0)
+          const allFailed = results.every(r => r.exitCode !== 0)
+          if (allFailed) {
+            process.exit(2)  // 全部失败
+          } else if (!allSuccess) {
+            process.exit(1)  // 部分失败
+          }
+          process.exit(0)  // 全部成功
+        } catch (error: any) {
+          console.log('')
+          console2.error(`批量执行失败: ${error.message}`)
+          console.log('')
+          process.exit(1)
+        }
+        return
+      }
+
+      // 单服务器执行模式
       const React = await import('react')
       const { render } = await import('ink')
       const { MultiStepCommandGenerator } = await import('../src/components/MultiStepCommandGenerator.js')
