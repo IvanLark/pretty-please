@@ -36,6 +36,32 @@ import {
   displayAliases,
   resolveAlias,
 } from '../src/alias.js'
+import {
+  addRemote,
+  removeRemote,
+  displayRemotes,
+  getRemote,
+  testRemoteConnection,
+  sshExec,
+  collectRemoteSysInfo,
+  setRemoteWorkDir,
+  getRemoteWorkDir,
+} from '../src/remote.js'
+import {
+  addRemoteHistory,
+  displayRemoteHistory,
+  clearRemoteHistory,
+  fetchRemoteShellHistory,
+  displayRemoteShellHistory,
+  clearRemoteShellHistory,
+} from '../src/remote-history.js'
+import {
+  detectRemoteShell,
+  getRemoteShellConfigPath,
+  installRemoteShellHook,
+  uninstallRemoteShellHook,
+  getRemoteHookStatus,
+} from '../src/shell-hook.js'
 
 // 获取主题颜色的辅助函数
 function getThemeColors() {
@@ -573,6 +599,367 @@ aliasCmd.action(() => {
   displayAliases()
 })
 
+// remote 子命令
+const remoteCmd = program.command('remote').description('管理远程服务器')
+
+remoteCmd
+  .command('list')
+  .description('列出所有远程服务器')
+  .action(() => {
+    displayRemotes()
+  })
+
+remoteCmd
+  .command('add <name> <host>')
+  .description('添加远程服务器（格式: user@host 或 user@host:port）')
+  .option('-k, --key <path>', 'SSH 私钥路径')
+  .option('-p, --password', '使用密码认证（每次执行时输入）')
+  .action((name, host, options) => {
+    try {
+      addRemote(name, host, { key: options.key, password: options.password })
+      console.log('')
+      console2.success(`已添加远程服务器: ${name}`)
+      console.log(`  ${chalk.gray('→')} ${host}`)
+      if (options.key) {
+        console.log(`  ${chalk.gray('密钥:')} ${options.key}`)
+      }
+      if (options.password) {
+        console.log(`  ${chalk.gray('认证:')} 密码（每次执行时输入）`)
+      }
+      console.log('')
+    } catch (error: any) {
+      console.log('')
+      console2.error(error.message)
+      console.log('')
+      process.exit(1)
+    }
+  })
+
+remoteCmd
+  .command('remove <name>')
+  .description('删除远程服务器')
+  .action((name) => {
+    const removed = removeRemote(name)
+    console.log('')
+    if (removed) {
+      console2.success(`已删除远程服务器: ${name}`)
+    } else {
+      console2.error(`远程服务器不存在: ${name}`)
+    }
+    console.log('')
+  })
+
+remoteCmd
+  .command('test <name>')
+  .description('测试远程服务器连接')
+  .action(async (name) => {
+    const remote = getRemote(name)
+    if (!remote) {
+      console.log('')
+      console2.error(`远程服务器不存在: ${name}`)
+      console.log('')
+      process.exit(1)
+    }
+
+    console.log('')
+    console2.info(`正在测试连接 ${name} (${remote.user}@${remote.host}:${remote.port})...`)
+
+    const result = await testRemoteConnection(name)
+    console.log(`  ${result.message}`)
+
+    if (result.success) {
+      // 采集系统信息
+      console2.info('正在采集系统信息...')
+      try {
+        const sysInfo = await collectRemoteSysInfo(name, true)
+        console.log(`  ${chalk.gray('系统:')} ${sysInfo.os} ${sysInfo.osVersion}`)
+        console.log(`  ${chalk.gray('Shell:')} ${sysInfo.shell}`)
+        console.log(`  ${chalk.gray('主机名:')} ${sysInfo.hostname}`)
+      } catch (error: any) {
+        console2.warning(`无法采集系统信息: ${error.message}`)
+      }
+    }
+    console.log('')
+  })
+
+// remote hook 子命令
+const remoteHookCmd = remoteCmd.command('hook').description('管理远程服务器 Shell Hook')
+
+remoteHookCmd
+  .command('install <name>')
+  .description('在远程服务器安装 Shell Hook')
+  .action(async (name) => {
+    const remote = getRemote(name)
+    if (!remote) {
+      console.log('')
+      console2.error(`远程服务器不存在: ${name}`)
+      console.log('')
+      process.exit(1)
+    }
+
+    console.log('')
+    console2.title('🔧 远程 Shell Hook 安装')
+    console2.muted('━'.repeat(40))
+    console2.info(`目标服务器: ${name} (${remote.user}@${remote.host})`)
+
+    try {
+      // 检测远程 shell 类型
+      const sshExecFn = async (cmd: string) => {
+        const result = await sshExec(name, cmd, { timeout: 30000 })
+        return { stdout: result.stdout, exitCode: result.exitCode }
+      }
+
+      const shellType = await detectRemoteShell(sshExecFn)
+      const configPath = getRemoteShellConfigPath(shellType)
+      console2.muted(`检测到 Shell: ${shellType}`)
+      console2.muted(`配置文件: ${configPath}`)
+      console.log('')
+
+      const result = await installRemoteShellHook(sshExecFn, shellType)
+      console.log(`  ${result.message}`)
+
+      if (result.success) {
+        console.log('')
+        console2.warning('⚠️  请在远程服务器重启终端或执行:')
+        console2.info(`   source ${configPath}`)
+      }
+    } catch (error: any) {
+      console2.error(`安装失败: ${error.message}`)
+    }
+    console.log('')
+  })
+
+remoteHookCmd
+  .command('uninstall <name>')
+  .description('从远程服务器卸载 Shell Hook')
+  .action(async (name) => {
+    const remote = getRemote(name)
+    if (!remote) {
+      console.log('')
+      console2.error(`远程服务器不存在: ${name}`)
+      console.log('')
+      process.exit(1)
+    }
+
+    console.log('')
+    console2.info(`正在从 ${name} 卸载 Shell Hook...`)
+
+    try {
+      const sshExecFn = async (cmd: string) => {
+        const result = await sshExec(name, cmd, { timeout: 30000 })
+        return { stdout: result.stdout, exitCode: result.exitCode }
+      }
+
+      const shellType = await detectRemoteShell(sshExecFn)
+      const result = await uninstallRemoteShellHook(sshExecFn, shellType)
+      console.log(`  ${result.message}`)
+
+      if (result.success) {
+        console.log('')
+        console2.warning('⚠️  请在远程服务器重启终端使其生效')
+      }
+    } catch (error: any) {
+      console2.error(`卸载失败: ${error.message}`)
+    }
+    console.log('')
+  })
+
+remoteHookCmd
+  .command('status <name>')
+  .description('查看远程服务器 Shell Hook 状态')
+  .action(async (name) => {
+    const remote = getRemote(name)
+    if (!remote) {
+      console.log('')
+      console2.error(`远程服务器不存在: ${name}`)
+      console.log('')
+      process.exit(1)
+    }
+
+    console.log('')
+    console2.info(`正在检查 ${name} 的 Hook 状态...`)
+
+    try {
+      const sshExecFn = async (cmd: string) => {
+        const result = await sshExec(name, cmd, { timeout: 30000 })
+        return { stdout: result.stdout, exitCode: result.exitCode }
+      }
+
+      const status = await getRemoteHookStatus(sshExecFn)
+
+      console.log('')
+      console2.title(`📊 远程 Shell Hook 状态 - ${name}`)
+      console2.muted('━'.repeat(40))
+      console.log(`  ${chalk.hex(getThemeColors().primary)('Shell 类型')}: ${status.shellType}`)
+      console.log(`  ${chalk.hex(getThemeColors().primary)('配置文件')}:   ${status.configPath}`)
+      console.log(
+        `  ${chalk.hex(getThemeColors().primary)('已安装')}:     ${
+          status.installed ? chalk.hex(getThemeColors().success)('是') : chalk.gray('否')
+        }`
+      )
+      console2.muted('━'.repeat(40))
+
+      if (!status.installed) {
+        console.log('')
+        console2.muted(`提示: 运行 pls remote hook install ${name} 安装 Shell Hook`)
+      }
+    } catch (error: any) {
+      console2.error(`检查失败: ${error.message}`)
+    }
+    console.log('')
+  })
+
+// remote history 子命令
+const remoteHistoryCmd = remoteCmd.command('history').description('管理远程服务器历史记录')
+
+remoteHistoryCmd
+  .command('show <name>')
+  .description('显示远程服务器命令历史')
+  .action((name) => {
+    displayRemoteHistory(name)
+  })
+
+remoteHistoryCmd
+  .command('clear <name>')
+  .description('清空远程服务器命令历史')
+  .action((name) => {
+    clearRemoteHistory(name)
+    console.log('')
+    console2.success(`已清空服务器 "${name}" 的命令历史`)
+    console.log('')
+  })
+
+remoteHistoryCmd
+  .command('shell <name>')
+  .description('显示远程服务器 Shell 历史')
+  .action(async (name) => {
+    await displayRemoteShellHistory(name)
+  })
+
+remoteHistoryCmd
+  .command('shell-clear <name>')
+  .description('清空远程服务器 Shell 历史')
+  .action(async (name) => {
+    await clearRemoteShellHistory(name)
+  })
+
+// remote default 子命令
+remoteCmd
+  .command('default [name]')
+  .description('设置或查看默认远程服务器')
+  .option('-c, --clear', '清除默认服务器设置')
+  .action((name?: string, options?: { clear?: boolean }) => {
+    const config = getConfig()
+
+    // 清除默认
+    if (options?.clear) {
+      if (config.defaultRemote) {
+        setConfigValue('defaultRemote', '')
+        console.log('')
+        console2.success('已清除默认远程服务器')
+        console.log('')
+      } else {
+        console.log('')
+        console2.muted('当前没有设置默认远程服务器')
+        console.log('')
+      }
+      return
+    }
+
+    // 查看默认
+    if (!name) {
+      console.log('')
+      if (config.defaultRemote) {
+        const remote = getRemote(config.defaultRemote)
+        if (remote) {
+          console.log(`默认远程服务器: ${chalk.hex(getThemeColors().primary)(config.defaultRemote)}`)
+          console.log(`  ${chalk.gray('→')} ${remote.user}@${remote.host}:${remote.port}`)
+        } else {
+          console2.warning(`默认服务器 "${config.defaultRemote}" 不存在，建议清除设置`)
+          console2.muted('运行 pls remote default --clear 清除')
+        }
+      } else {
+        console2.muted('当前没有设置默认远程服务器')
+        console2.muted('使用 pls remote default <name> 设置默认服务器')
+      }
+      console.log('')
+      return
+    }
+
+    // 设置默认
+    const remote = getRemote(name)
+    if (!remote) {
+      console.log('')
+      console2.error(`远程服务器不存在: ${name}`)
+      console2.muted('使用 pls remote list 查看所有服务器')
+      console.log('')
+      process.exit(1)
+    }
+
+    setConfigValue('defaultRemote', name)
+    console.log('')
+    console2.success(`已设置默认远程服务器: ${name}`)
+    console.log(`  ${chalk.gray('→')} ${remote.user}@${remote.host}:${remote.port}`)
+    console2.muted('现在可以使用 pls -r <prompt> 直接在该服务器执行')
+    console.log('')
+  })
+
+// remote workdir 子命令
+remoteCmd
+  .command('workdir <name> [path]')
+  .description('设置或查看远程服务器的工作目录')
+  .option('-c, --clear', '清除工作目录设置')
+  .action((name: string, workdirPath?: string, options?: { clear?: boolean }) => {
+    const remote = getRemote(name)
+    if (!remote) {
+      console.log('')
+      console2.error(`远程服务器不存在: ${name}`)
+      console.log('')
+      process.exit(1)
+    }
+
+    // 清除工作目录
+    if (options?.clear) {
+      if (remote.workDir) {
+        setRemoteWorkDir(name, '-')
+        console.log('')
+        console2.success(`已清除 ${name} 的工作目录设置`)
+        console.log('')
+      } else {
+        console.log('')
+        console2.muted(`${name} 没有设置工作目录`)
+        console.log('')
+      }
+      return
+    }
+
+    // 查看工作目录
+    if (!workdirPath) {
+      console.log('')
+      if (remote.workDir) {
+        console.log(`${chalk.hex(getThemeColors().primary)(name)} 的工作目录:`)
+        console.log(`  ${chalk.gray('→')} ${remote.workDir}`)
+      } else {
+        console2.muted(`${name} 没有设置工作目录`)
+        console2.muted(`使用 pls remote workdir ${name} <path> 设置工作目录`)
+      }
+      console.log('')
+      return
+    }
+
+    // 设置工作目录
+    setRemoteWorkDir(name, workdirPath)
+    console.log('')
+    console2.success(`已设置 ${name} 的工作目录: ${workdirPath}`)
+    console2.muted('现在在该服务器执行的命令会自动切换到此目录')
+    console.log('')
+  })
+
+// 默认 remote 命令（显示列表）
+remoteCmd.action(() => {
+  displayRemotes()
+})
+
 // chat 子命令
 const chatCmd = program.command('chat').description('AI 对话模式，问答、讲解命令')
 
@@ -642,7 +1029,15 @@ chatCmd
 program
   .argument('[prompt...]', '自然语言描述你想执行的操作')
   .option('-d, --debug', '显示调试信息（系统信息、完整 prompt 等）')
+  .option('-r, --remote [name]', '在远程服务器上执行（不指定则使用默认服务器）')
   .action((promptArgs, options) => {
+    // 智能处理 -r 参数：如果 -r 后面的值不是已注册的服务器名，把它当作 prompt 的一部分
+    if (typeof options.remote === 'string' && !getRemote(options.remote)) {
+      // "查看当前目录" 不是服务器名，放回 prompt
+      promptArgs.unshift(options.remote)
+      options.remote = true  // 改为使用默认服务器
+    }
+
     if (promptArgs.length === 0) {
       program.help()
       return
@@ -684,11 +1079,78 @@ program
       process.exit(1)
     }
 
+    // 解析远程服务器名称
+    // options.remote 可能是：
+    // - undefined: 没有使用 -r
+    // - true: 使用了 -r 但没有指定名称（使用默认）
+    // - string: 使用了 -r 并指定了名称
+    let remoteName: string | undefined
+    if (options.remote !== undefined) {
+      if (options.remote === true) {
+        // 使用默认服务器
+        const config = getConfig()
+        if (!config.defaultRemote) {
+          console.log('')
+          console2.error('未设置默认远程服务器')
+          console2.muted('使用 pls remote default <name> 设置默认服务器')
+          console2.muted('或使用 pls -r <name> <prompt> 指定服务器')
+          console.log('')
+          process.exit(1)
+        }
+        remoteName = config.defaultRemote
+      } else {
+        remoteName = options.remote
+      }
+
+      // 检查服务器是否存在
+      const remote = getRemote(remoteName!)
+      if (!remote) {
+        console.log('')
+        console2.error(`远程服务器不存在: ${remoteName}`)
+        console2.muted('使用 pls remote add <name> <user@host> 添加服务器')
+        console.log('')
+        process.exit(1)
+      }
+    }
+
     // 懒加载 MultiStepCommandGenerator 组件（避免启动时加载 React/Ink）
     ;(async () => {
       const React = await import('react')
       const { render } = await import('ink')
       const { MultiStepCommandGenerator } = await import('../src/components/MultiStepCommandGenerator.js')
+
+      // 如果是远程模式，先获取远程上下文
+      let remoteContext: {
+        name: string
+        sysInfo: Awaited<ReturnType<typeof collectRemoteSysInfo>>
+        shellHistory: Awaited<ReturnType<typeof fetchRemoteShellHistory>>
+      } | null = null
+
+      if (remoteName) {
+        console.log('')
+        console2.info(`正在连接远程服务器 ${remoteName}...`)
+
+        try {
+          // 采集系统信息（使用缓存）
+          const sysInfo = await collectRemoteSysInfo(remoteName)
+          if (options.debug) {
+            console2.muted(`系统: ${sysInfo.os} ${sysInfo.osVersion} (${sysInfo.shell})`)
+          }
+
+          // 获取远程 shell 历史
+          const shellHistory = await fetchRemoteShellHistory(remoteName)
+          if (options.debug && shellHistory.length > 0) {
+            console2.muted(`Shell 历史: ${shellHistory.length} 条`)
+          }
+
+          remoteContext = { name: remoteName, sysInfo, shellHistory }
+          console2.success(`已连接到 ${remoteName}`)
+        } catch (error: any) {
+          console2.error(`无法连接到 ${remoteName}: ${error.message}`)
+          console.log('')
+          process.exit(1)
+        }
+      }
 
       const executedSteps: ExecutedStep[] = []
       let currentStepNumber = 1
@@ -704,6 +1166,12 @@ program
             debug: options.debug,
             previousSteps: executedSteps,
             currentStepNumber,
+            remoteContext: remoteContext ? {
+              name: remoteContext.name,
+              sysInfo: remoteContext.sysInfo,
+              shellHistory: remoteContext.shellHistory,
+            } : undefined,
+            isRemote: !!remoteName,  // 远程执行时不检测 builtin
             onStepComplete: (res: any) => {
               stepResult = res
               unmount()
@@ -723,16 +1191,30 @@ program
         }
 
         if (stepResult.hasBuiltin) {
-          addHistory({
-            userPrompt: currentStepNumber === 1 ? prompt : `[步骤${currentStepNumber}] ${prompt}`,
-            command: stepResult.command,
-            aiGeneratedCommand: stepResult.aiGeneratedCommand, // AI 原始命令
-            userModified: stepResult.userModified || false,
-            executed: false,
-            exitCode: null,
-            output: '',
-            reason: 'builtin',
-          })
+          // 远程模式记录到远程历史
+          if (remoteName) {
+            addRemoteHistory(remoteName, {
+              userPrompt: currentStepNumber === 1 ? prompt : `[步骤${currentStepNumber}] ${prompt}`,
+              command: stepResult.command,
+              aiGeneratedCommand: stepResult.aiGeneratedCommand,
+              userModified: stepResult.userModified || false,
+              executed: false,
+              exitCode: null,
+              output: '',
+              reason: 'builtin',
+            })
+          } else {
+            addHistory({
+              userPrompt: currentStepNumber === 1 ? prompt : `[步骤${currentStepNumber}] ${prompt}`,
+              command: stepResult.command,
+              aiGeneratedCommand: stepResult.aiGeneratedCommand, // AI 原始命令
+              userModified: stepResult.userModified || false,
+              executed: false,
+              exitCode: null,
+              output: '',
+              reason: 'builtin',
+            })
+          }
           process.exit(0)
         }
 
@@ -763,9 +1245,25 @@ program
             process.exit(1)
           }
 
-          // 执行命令
+          // 执行命令（本地或远程）
           const execStart = Date.now()
-          const { exitCode, output, stdout } = await executeCommand(stepResult.command)
+          let exitCode: number
+          let output: string
+          let stdout: string
+
+          if (remoteName) {
+            // 远程执行
+            const result = await executeRemoteCommand(remoteName, stepResult.command)
+            exitCode = result.exitCode
+            output = result.output
+            stdout = result.stdout
+          } else {
+            // 本地执行
+            const result = await executeCommand(stepResult.command)
+            exitCode = result.exitCode
+            output = result.output
+            stdout = result.stdout
+          }
           const execDuration = Date.now() - execStart
 
           // 判断命令是否成功
@@ -786,17 +1284,30 @@ program
           }
           executedSteps.push(executedStep)
 
-          // 记录到 pls 历史
-          addHistory({
-            userPrompt:
-              currentStepNumber === 1 ? prompt : `[步骤${currentStepNumber}] ${stepResult.reasoning || prompt}`,
-            command: stepResult.command,
-            aiGeneratedCommand: stepResult.aiGeneratedCommand, // AI 原始命令
-            userModified: stepResult.userModified || false,
-            executed: true,
-            exitCode,
-            output,
-          })
+          // 记录到 pls 历史（远程模式记录到远程历史）
+          if (remoteName) {
+            addRemoteHistory(remoteName, {
+              userPrompt:
+                currentStepNumber === 1 ? prompt : `[步骤${currentStepNumber}] ${stepResult.reasoning || prompt}`,
+              command: stepResult.command,
+              aiGeneratedCommand: stepResult.aiGeneratedCommand,
+              userModified: stepResult.userModified || false,
+              executed: true,
+              exitCode,
+              output,
+            })
+          } else {
+            addHistory({
+              userPrompt:
+                currentStepNumber === 1 ? prompt : `[步骤${currentStepNumber}] ${stepResult.reasoning || prompt}`,
+              command: stepResult.command,
+              aiGeneratedCommand: stepResult.aiGeneratedCommand, // AI 原始命令
+              userModified: stepResult.userModified || false,
+              executed: true,
+              exitCode,
+              output,
+            })
+          }
 
           // 显示结果
           console.log('')
@@ -854,6 +1365,63 @@ program
     })()
   })
 
+/**
+ * 执行远程命令
+ * 如果设置了工作目录，自动添加 cd 前缀
+ */
+async function executeRemoteCommand(
+  remoteName: string,
+  command: string
+): Promise<{ exitCode: number; output: string; stdout: string; stderr: string }> {
+  let stdout = ''
+  let stderr = ''
+
+  // 如果有工作目录，自动添加 cd 前缀
+  const workDir = getRemoteWorkDir(remoteName)
+  const actualCommand = workDir ? `cd ${workDir} && ${command}` : command
+
+  console.log('') // 空行
+
+  // 计算命令框宽度，让分隔线长度一致
+  const lines = command.split('\n')
+  const maxContentWidth = Math.max(...lines.map(l => console2.getDisplayWidth(l)))
+  const boxWidth = Math.max(maxContentWidth + 4, console2.getDisplayWidth('生成命令') + 6, 20)
+  console2.printSeparator(`远程输出 (${remoteName})`, boxWidth)
+
+  try {
+    const result = await sshExec(remoteName, actualCommand, {
+      onStdout: (data) => {
+        stdout += data
+        process.stdout.write(data)
+      },
+      onStderr: (data) => {
+        stderr += data
+        process.stderr.write(data)
+      },
+    })
+
+    if (stdout || stderr) {
+      console2.printSeparator('', boxWidth)
+    }
+
+    return {
+      exitCode: result.exitCode,
+      output: stdout + stderr,
+      stdout,
+      stderr,
+    }
+  } catch (error: any) {
+    console2.printSeparator('', boxWidth)
+    console2.error(error.message)
+    return {
+      exitCode: 1,
+      output: error.message,
+      stdout: '',
+      stderr: error.message,
+    }
+  }
+}
+
 // 自定义帮助信息
 program.addHelpText(
   'after',
@@ -876,6 +1444,13 @@ ${chalk.bold('示例:')}
   ${chalk.hex(getThemeColors().primary)('pls upgrade')}                    升级到最新版本
   ${chalk.hex(getThemeColors().primary)('pls config')}                     交互式配置
   ${chalk.hex(getThemeColors().primary)('pls config list')}                查看当前配置
+
+${chalk.bold('远程执行:')}
+  ${chalk.hex(getThemeColors().primary)('pls remote')}                     查看远程服务器列表
+  ${chalk.hex(getThemeColors().primary)('pls remote add myserver root@1.2.3.4')}  添加服务器
+  ${chalk.hex(getThemeColors().primary)('pls remote test myserver')}       测试连接
+  ${chalk.hex(getThemeColors().primary)('pls -r myserver 查看磁盘')}       在远程服务器执行
+  ${chalk.hex(getThemeColors().primary)('pls remote hook install myserver')}  安装远程 Shell Hook
 `
 )
 

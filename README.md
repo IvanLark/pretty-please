@@ -11,6 +11,7 @@
 - 🛡️ **智能错误恢复** - 命令失败时 AI 自动分析并调整策略
 - ✏️ **命令编辑** - 执行前可编辑 AI 生成的命令，支持 manual/auto 两种模式
 - 💬 **AI 对话模式** - 随时问 AI 命令怎么用
+- 🌐 **远程执行** - 通过 SSH 在远程服务器执行命令，支持密码/密钥认证
 - 📜 **三种历史记录** - 命令历史、对话历史、Shell 历史统一管理
 - 🎨 **精美界面** - 基于 React + Ink 的终端 UI，Markdown 渲染
 - 🌗 **主题切换** - 支持 dark/light 主题，适配不同终端背景
@@ -297,6 +298,89 @@ pls config set <key> <value>  # 设置单个配置项
 - `cohere` - Cohere
 - `fireworks` - Fireworks AI
 - `together` - Together AI
+
+## 🌐 远程执行
+
+通过 SSH 在远程服务器上执行 AI 生成的命令，支持密码/密钥认证。
+
+### 添加远程服务器
+
+```bash
+# 使用默认密钥（~/.ssh/id_rsa）
+pls remote add myserver root@192.168.1.100
+
+# 指定端口
+pls remote add myserver root@192.168.1.100:2222
+
+# 使用指定密钥
+pls remote add myserver root@192.168.1.100 --key ~/.ssh/my_key
+
+# 使用密码认证（每次执行时输入密码）
+pls remote add myserver root@192.168.1.100 --password
+```
+
+### 管理远程服务器
+
+```bash
+pls remote                    # 查看所有服务器
+pls remote list               # 同上
+pls remote test myserver      # 测试连接并采集系统信息
+pls remote remove myserver    # 删除服务器
+```
+
+### 设置默认服务器
+
+```bash
+pls remote default myserver   # 设置默认服务器
+pls remote default            # 查看当前默认服务器
+pls remote default --clear    # 清除默认服务器
+```
+
+设置默认服务器后，使用 `-r` 参数时可以省略服务器名：
+
+```bash
+pls -r 查看磁盘使用情况        # 使用默认服务器
+```
+
+### 设置工作目录
+
+```bash
+pls remote workdir myserver /var/www    # 设置工作目录
+pls remote workdir myserver             # 查看当前工作目录
+pls remote workdir myserver --clear     # 清除工作目录
+```
+
+设置工作目录后，所有命令会自动在该目录下执行。
+
+### 远程执行命令
+
+```bash
+# 指定服务器执行
+pls -r myserver 查看磁盘使用情况
+pls -r myserver 查找大于 100MB 的日志文件
+
+# 使用默认服务器（需先设置）
+pls -r 查看当前目录的文件
+```
+
+### 远程 Shell Hook
+
+在远程服务器上安装 Shell Hook，让 AI 了解你在远程服务器上的操作历史：
+
+```bash
+pls remote hook install myserver    # 安装远程 Hook
+pls remote hook status myserver     # 查看状态
+pls remote hook uninstall myserver  # 卸载 Hook
+```
+
+### 远程历史记录
+
+```bash
+pls remote history show myserver        # 查看远程命令历史
+pls remote history clear myserver       # 清空远程命令历史
+pls remote history shell myserver       # 查看远程 Shell 历史
+pls remote history shell-clear myserver # 清空远程 Shell 历史
+```
 
 ## 🔧 Shell Hook（可选）
 

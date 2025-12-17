@@ -517,3 +517,238 @@ export function clearShellHistory(): void {
   console.log(chalk.hex(colors.success)('✓ Shell 历史已清空'))
   console.log('')
 }
+
+// ================== 远程 Shell Hook ==================
+
+/**
+ * 生成远程 zsh hook 脚本
+ */
+function generateRemoteZshHook(): string {
+  return `
+${HOOK_START_MARKER}
+# 记录命令到 pretty-please 历史
+__pls_preexec() {
+  __PLS_LAST_CMD="$1"
+  __PLS_CMD_START=$(date +%s)
+}
+
+__pls_precmd() {
+  local exit_code=$?
+  if [[ -n "$__PLS_LAST_CMD" ]]; then
+    local end_time=$(date +%s)
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    # 确保目录存在
+    mkdir -p ~/.please
+    # 转义命令中的特殊字符
+    local escaped_cmd=$(echo "$__PLS_LAST_CMD" | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g')
+    echo "{\\"cmd\\":\\"$escaped_cmd\\",\\"exit\\":$exit_code,\\"time\\":\\"$timestamp\\"}" >> ~/.please/shell_history.jsonl
+    # 保持文件不超过 50 行
+    tail -n 50 ~/.please/shell_history.jsonl > ~/.please/shell_history.jsonl.tmp && mv ~/.please/shell_history.jsonl.tmp ~/.please/shell_history.jsonl
+    unset __PLS_LAST_CMD
+  fi
+}
+
+autoload -Uz add-zsh-hook
+add-zsh-hook preexec __pls_preexec
+add-zsh-hook precmd __pls_precmd
+${HOOK_END_MARKER}
+`
+}
+
+/**
+ * 生成远程 bash hook 脚本
+ */
+function generateRemoteBashHook(): string {
+  return `
+${HOOK_START_MARKER}
+# 记录命令到 pretty-please 历史
+__pls_prompt_command() {
+  local exit_code=$?
+  local last_cmd=$(history 1 | sed 's/^ *[0-9]* *//')
+  if [[ -n "$last_cmd" && "$last_cmd" != "$__PLS_LAST_CMD" ]]; then
+    __PLS_LAST_CMD="$last_cmd"
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    # 确保目录存在
+    mkdir -p ~/.please
+    local escaped_cmd=$(echo "$last_cmd" | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g')
+    echo "{\\"cmd\\":\\"$escaped_cmd\\",\\"exit\\":$exit_code,\\"time\\":\\"$timestamp\\"}" >> ~/.please/shell_history.jsonl
+    tail -n 50 ~/.please/shell_history.jsonl > ~/.please/shell_history.jsonl.tmp && mv ~/.please/shell_history.jsonl.tmp ~/.please/shell_history.jsonl
+  fi
+}
+
+if [[ ! "$PROMPT_COMMAND" =~ __pls_prompt_command ]]; then
+  PROMPT_COMMAND="__pls_prompt_command;\${PROMPT_COMMAND}"
+fi
+${HOOK_END_MARKER}
+`
+}
+
+/**
+ * 检测远程服务器的 shell 类型
+ */
+export async function detectRemoteShell(sshExecFn: (cmd: string) => Promise<{ stdout: string; exitCode: number }>): Promise<ShellType> {
+  try {
+    const result = await sshExecFn('basename "$SHELL"')
+    if (result.exitCode === 0) {
+      const shell = result.stdout.trim()
+      if (shell === 'zsh') return 'zsh'
+      if (shell === 'bash') return 'bash'
+    }
+  } catch {
+    // 忽略错误
+  }
+  return 'bash' // 默认 bash
+}
+
+/**
+ * 获取远程 shell 配置文件路径
+ */
+export function getRemoteShellConfigPath(shellType: ShellType): string {
+  switch (shellType) {
+    case 'zsh':
+      return '~/.zshrc'
+    case 'bash':
+      return '~/.bashrc'
+    default:
+      return '~/.bashrc'
+  }
+}
+
+/**
+ * 生成远程 hook 脚本
+ */
+export function generateRemoteHookScript(shellType: ShellType): string | null {
+  switch (shellType) {
+    case 'zsh':
+      return generateRemoteZshHook()
+    case 'bash':
+      return generateRemoteBashHook()
+    default:
+      return null
+  }
+}
+
+/**
+ * 检查远程 hook 是否已安装
+ */
+export async function checkRemoteHookInstalled(
+  sshExecFn: (cmd: string) => Promise<{ stdout: string; exitCode: number }>,
+  configPath: string
+): Promise<boolean> {
+  try {
+    const result = await sshExecFn(`grep -q "${HOOK_START_MARKER}" ${configPath} 2>/dev/null && echo "installed" || echo "not_installed"`)
+    return result.stdout.trim() === 'installed'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 在远程服务器安装 shell hook
+ */
+export async function installRemoteShellHook(
+  sshExecFn: (cmd: string) => Promise<{ stdout: string; exitCode: number }>,
+  shellType: ShellType
+): Promise<{ success: boolean; message: string }> {
+  const colors = getColors()
+  const configPath = getRemoteShellConfigPath(shellType)
+  const hookScript = generateRemoteHookScript(shellType)
+
+  if (!hookScript) {
+    return { success: false, message: chalk.hex(colors.error)(`不支持的 shell 类型: ${shellType}`) }
+  }
+
+  // 检查是否已安装
+  const installed = await checkRemoteHookInstalled(sshExecFn, configPath)
+  if (installed) {
+    return { success: true, message: chalk.hex(colors.warning)('Shell hook 已安装，跳过') }
+  }
+
+  // 备份原配置文件
+  try {
+    await sshExecFn(`cp ${configPath} ${configPath}.pls-backup 2>/dev/null || true`)
+  } catch {
+    // 忽略备份错误
+  }
+
+  // 安装 hook
+  // 使用 cat 和 heredoc 来追加内容
+  const escapedScript = hookScript.replace(/'/g, "'\"'\"'")
+  const installCmd = `echo '${escapedScript}' >> ${configPath}`
+
+  try {
+    const result = await sshExecFn(installCmd)
+    if (result.exitCode !== 0) {
+      return { success: false, message: chalk.hex(colors.error)(`安装失败: ${result.stdout}`) }
+    }
+
+    // 确保 ~/.please 目录存在
+    await sshExecFn('mkdir -p ~/.please')
+
+    return {
+      success: true,
+      message: chalk.hex(colors.success)(`Shell hook 已安装到 ${configPath}`),
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return { success: false, message: chalk.hex(colors.error)(`安装失败: ${message}`) }
+  }
+}
+
+/**
+ * 从远程服务器卸载 shell hook
+ */
+export async function uninstallRemoteShellHook(
+  sshExecFn: (cmd: string) => Promise<{ stdout: string; exitCode: number }>,
+  shellType: ShellType
+): Promise<{ success: boolean; message: string }> {
+  const colors = getColors()
+  const configPath = getRemoteShellConfigPath(shellType)
+
+  // 检查是否已安装
+  const installed = await checkRemoteHookInstalled(sshExecFn, configPath)
+  if (!installed) {
+    return { success: true, message: chalk.hex(colors.warning)('Shell hook 未安装，跳过') }
+  }
+
+  // 使用 sed 删除 hook 代码块
+  // 注意：需要处理特殊字符
+  const startMarkerEscaped = HOOK_START_MARKER.replace(/[[\]]/g, '\\$&')
+  const endMarkerEscaped = HOOK_END_MARKER.replace(/[[\]]/g, '\\$&')
+
+  // 在 macOS 和 Linux 上 sed -i 行为不同，使用 sed + 临时文件
+  const uninstallCmd = `
+sed '/${startMarkerEscaped}/,/${endMarkerEscaped}/d' ${configPath} > ${configPath}.tmp && mv ${configPath}.tmp ${configPath}
+`
+
+  try {
+    const result = await sshExecFn(uninstallCmd)
+    if (result.exitCode !== 0) {
+      return { success: false, message: chalk.hex(colors.error)(`卸载失败: ${result.stdout}`) }
+    }
+
+    return {
+      success: true,
+      message: chalk.hex(colors.success)('Shell hook 已卸载'),
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return { success: false, message: chalk.hex(colors.error)(`卸载失败: ${message}`) }
+  }
+}
+
+/**
+ * 获取远程 hook 状态
+ */
+export async function getRemoteHookStatus(
+  sshExecFn: (cmd: string) => Promise<{ stdout: string; exitCode: number }>
+): Promise<{ installed: boolean; shellType: ShellType; configPath: string }> {
+  // 检测 shell 类型
+  const shellType = await detectRemoteShell(sshExecFn)
+  const configPath = getRemoteShellConfigPath(shellType)
+
+  // 检查是否已安装
+  const installed = await checkRemoteHookInstalled(sshExecFn, configPath)
+
+  return { installed, shellType, configPath }
+}

@@ -52,6 +52,29 @@ export interface AliasConfig {
 }
 
 /**
+ * 远程服务器配置接口
+ */
+export interface RemoteConfig {
+  host: string
+  user: string
+  port: number
+  key?: string           // SSH 私钥路径
+  password?: boolean     // 是否使用密码认证（密码不存储，每次交互输入）
+  workDir?: string       // 默认工作目录
+}
+
+/**
+ * 远程服务器系统信息缓存
+ */
+export interface RemoteSysInfo {
+  os: string             // 操作系统 (linux, darwin, etc.)
+  osVersion: string      // 系统版本
+  shell: string          // 默认 shell (bash, zsh, etc.)
+  hostname: string       // 主机名
+  cachedAt: string       // 缓存时间
+}
+
+/**
  * 配置接口
  */
 export interface Config {
@@ -66,6 +89,8 @@ export interface Config {
   editMode: EditMode
   theme: ThemeName
   aliases: Record<string, AliasConfig>
+  remotes: Record<string, RemoteConfig>  // 远程服务器配置
+  defaultRemote?: string                  // 默认远程服务器名称
 }
 
 /**
@@ -83,6 +108,8 @@ const DEFAULT_CONFIG: Config = {
   editMode: 'manual',
   theme: 'dark',
   aliases: {},
+  remotes: {},
+  defaultRemote: '',
 }
 
 /**
@@ -170,7 +197,7 @@ export function setConfigValue(key: string, value: string | boolean | number): C
       throw new Error(`theme 必须是以下之一: ${VALID_THEMES.join(', ')}`)
     }
     config.theme = strValue as ThemeName
-  } else if (key === 'apiKey' || key === 'baseUrl' || key === 'model') {
+  } else if (key === 'apiKey' || key === 'baseUrl' || key === 'model' || key === 'defaultRemote') {
     config[key] = String(value)
   }
 

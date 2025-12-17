@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Box, Text, useInput } from 'ink'
 import TextInput from 'ink-text-input'
 import Spinner from 'ink-spinner'
-import { generateMultiStepCommand, type CommandStep, type ExecutedStep } from '../multi-step.js'
+import { generateMultiStepCommand, type CommandStep, type ExecutedStep, type RemoteContext } from '../multi-step.js'
 import { detectBuiltin, formatBuiltins } from '../builtin-detector.js'
 import { CommandBox } from './CommandBox.js'
 import { ConfirmationPrompt } from './ConfirmationPrompt.js'
@@ -28,6 +28,8 @@ interface MultiStepCommandGeneratorProps {
   }) => void
   previousSteps?: ExecutedStep[]
   currentStepNumber?: number
+  remoteContext?: RemoteContext  // 远程执行上下文
+  isRemote?: boolean             // 是否为远程执行（远程执行时不检测 builtin）
 }
 
 type State =
@@ -46,6 +48,8 @@ export const MultiStepCommandGenerator: React.FC<MultiStepCommandGeneratorProps>
   debug,
   previousSteps = [],
   currentStepNumber = 1,
+  remoteContext,
+  isRemote = false,
   onStepComplete,
 }) => {
   const theme = getCurrentTheme()
@@ -68,7 +72,7 @@ export const MultiStepCommandGenerator: React.FC<MultiStepCommandGeneratorProps>
   useEffect(() => {
     const thinkStart = Date.now()
 
-    generateMultiStepCommand(prompt, previousSteps, { debug })
+    generateMultiStepCommand(prompt, previousSteps, { debug, remoteContext })
       .then((result) => {
         const thinkEnd = Date.now()
         setThinkDuration(thinkEnd - thinkStart)
@@ -92,11 +96,11 @@ export const MultiStepCommandGenerator: React.FC<MultiStepCommandGeneratorProps>
           return
         }
 
-        // 检测 builtin（优先检测）
+        // 检测 builtin（优先检测，但远程执行时跳过）
         const { hasBuiltin, builtins } = detectBuiltin(result.stepData.command)
 
-        if (hasBuiltin) {
-          // 有 builtin，不管什么模式都不编辑，直接提示
+        if (hasBuiltin && !isRemote) {
+          // 有 builtin 且是本地执行，不管什么模式都不编辑，直接提示
           setState({
             type: 'showing_command',
             stepData: result.stepData,
@@ -143,7 +147,7 @@ export const MultiStepCommandGenerator: React.FC<MultiStepCommandGeneratorProps>
           })
         }, 100)
       })
-  }, [prompt, previousSteps, debug])
+  }, [prompt, previousSteps, debug, remoteContext])
 
   // 处理确认
   const handleConfirm = () => {
@@ -229,7 +233,10 @@ export const MultiStepCommandGenerator: React.FC<MultiStepCommandGeneratorProps>
         <Box>
           <Text color={theme.info}>
             <Spinner type="dots" />{' '}
-            {currentStepNumber === 1 ? '正在思考...' : `正在规划步骤 ${currentStepNumber}...`}
+            {remoteContext
+              ? (currentStepNumber === 1 ? `正在为 ${remoteContext.name} 思考...` : `正在规划步骤 ${currentStepNumber} (${remoteContext.name})...`)
+              : (currentStepNumber === 1 ? '正在思考...' : `正在规划步骤 ${currentStepNumber}...`)
+            }
           </Text>
         </Box>
       )}
@@ -263,6 +270,12 @@ export const MultiStepCommandGenerator: React.FC<MultiStepCommandGeneratorProps>
                 </Box>
               )}
 
+              {debugInfo.remoteContext && (
+                <Box marginTop={1}>
+                  <Text color={theme.text.secondary}>远程服务器: {debugInfo.remoteContext.name} ({debugInfo.remoteContext.sysInfo.os})</Text>
+                </Box>
+              )}
+
               <Box marginTop={1}>
                 <Text color={theme.text.secondary}>AI 返回的 JSON:</Text>
               </Box>
@@ -288,8 +301,8 @@ export const MultiStepCommandGenerator: React.FC<MultiStepCommandGeneratorProps>
           {/* 命令框 */}
           <CommandBox command={state.stepData.command} />
 
-          {/* Builtin 警告 */}
-          {(() => {
+          {/* Builtin 警告（仅本地执行时显示） */}
+          {!isRemote && (() => {
             const { hasBuiltin, builtins } = detectBuiltin(state.stepData.command)
             if (hasBuiltin) {
               return (
@@ -305,7 +318,7 @@ export const MultiStepCommandGenerator: React.FC<MultiStepCommandGeneratorProps>
           })()}
 
           {/* 确认提示 */}
-          {!detectBuiltin(state.stepData.command).hasBuiltin && (
+          {(isRemote || !detectBuiltin(state.stepData.command).hasBuiltin) && (
             <ConfirmationPrompt
               prompt="执行？"
               onConfirm={handleConfirm}

@@ -4,16 +4,19 @@ import { buildCommandSystemPrompt } from './prompts.js'
 import { formatSystemInfo } from './sysinfo.js'
 import { formatHistoryForAI } from './history.js'
 import { formatShellHistoryForAI, getShellHistory } from './shell-hook.js'
-import { getConfig } from './config.js'
+import { getConfig, type RemoteSysInfo } from './config.js'
+import { formatRemoteHistoryForAI, formatRemoteShellHistoryForAI, type RemoteShellHistoryItem } from './remote-history.js'
+import { formatRemoteSysInfoForAI } from './remote.js'
 
 /**
  * 多步骤命令的 Zod Schema
+ * 注意：optional 字段使用 .default() 是为了绕过 Mastra 0.24.8 对 optional 字段的验证 bug
  */
 export const CommandStepSchema = z.object({
   command: z.string(),
-  continue: z.boolean().optional(),  // 可选！没有 continue = 单步模式
-  reasoning: z.string().optional(),
-  nextStepHint: z.string().optional(),
+  continue: z.boolean().optional().default(false),
+  reasoning: z.string().optional().default(''),
+  nextStepHint: z.string().optional().default(''),
 })
 
 export type CommandStep = z.infer<typeof CommandStepSchema>
@@ -24,6 +27,15 @@ export type CommandStep = z.infer<typeof CommandStepSchema>
 export interface ExecutedStep extends CommandStep {
   exitCode: number
   output: string
+}
+
+/**
+ * 远程执行上下文
+ */
+export interface RemoteContext {
+  name: string
+  sysInfo: RemoteSysInfo
+  shellHistory: RemoteShellHistoryItem[]
 }
 
 /**
@@ -40,15 +52,36 @@ export function getFullSystemPrompt() {
 }
 
 /**
+ * 生成远程系统上下文信息
+ */
+export function getRemoteFullSystemPrompt(remoteContext: RemoteContext) {
+  // 格式化远程系统信息
+  const sysinfo = formatRemoteSysInfoForAI(remoteContext.name, remoteContext.sysInfo)
+
+  // 格式化远程 pls 命令历史
+  const plsHistory = formatRemoteHistoryForAI(remoteContext.name)
+
+  // 格式化远程 shell 历史
+  const shellHistory = formatRemoteShellHistoryForAI(remoteContext.shellHistory)
+  const shellHookEnabled = remoteContext.shellHistory.length > 0
+
+  return buildCommandSystemPrompt(sysinfo, plsHistory, shellHistory, shellHookEnabled)
+}
+
+/**
  * 使用 Mastra 生成多步骤命令
  */
 export async function generateMultiStepCommand(
   userPrompt: string,
   previousSteps: ExecutedStep[] = [],
-  options: { debug?: boolean } = {}
+  options: { debug?: boolean; remoteContext?: RemoteContext } = {}
 ): Promise<{ stepData: CommandStep; debugInfo?: any }> {
   const agent = createShellAgent()
-  const fullSystemPrompt = getFullSystemPrompt()
+
+  // 根据是否有远程上下文选择不同的系统提示词
+  const fullSystemPrompt = options.remoteContext
+    ? getRemoteFullSystemPrompt(options.remoteContext)
+    : getFullSystemPrompt()
 
   // 构建消息数组（string[] 格式）
   const messages: string[] = [userPrompt]
@@ -85,6 +118,10 @@ export async function generateMultiStepCommand(
         userPrompt,
         previousStepsCount: previousSteps.length,
         response: stepData,
+        remoteContext: options.remoteContext ? {
+          name: options.remoteContext.name,
+          sysInfo: options.remoteContext.sysInfo,
+        } : undefined,
       },
     }
   }
