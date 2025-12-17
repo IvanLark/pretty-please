@@ -2,6 +2,7 @@
 import { Command } from 'commander'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
+import path from 'path'
 import { exec } from 'child_process'
 import fs from 'fs'
 import os from 'os'
@@ -243,8 +244,10 @@ const themeCmd = program.command('theme').description('管理主题')
 themeCmd
   .command('list')
   .description('查看所有可用主题')
-  .action(async () => {
-    const { themes } = await import('../src/ui/theme.js')
+  .option('--custom', '只显示自定义主题')
+  .option('--builtin', '只显示内置主题')
+  .action(async (options: { custom?: boolean; builtin?: boolean }) => {
+    const { getAllThemeMetadata, isBuiltinTheme } = await import('../src/ui/theme.js')
     const config = getConfig()
     const currentTheme = config.theme || 'dark'
 
@@ -252,37 +255,82 @@ themeCmd
     console2.title('🎨 可用主题:')
     console2.muted('━'.repeat(50))
 
-    Object.keys(themes).forEach((themeName) => {
-      const isCurrent = themeName === currentTheme
-      const prefix = isCurrent ? '●' : '○'
-      const label = themeName === 'dark' ? 'dark (深色)' : 'light (浅色)'
-      const color = themeName === 'dark' ? '#00D9FF' : '#0284C7'
+    // 动态获取所有主题元数据
+    const allThemes = getAllThemeMetadata()
 
-      if (isCurrent) {
-        console.log(`  ${chalk.hex(color)(prefix)} ${chalk.hex(color).bold(label)} ${chalk.gray('(当前)')}`)
-      } else {
-        console.log(`  ${chalk.gray(prefix)} ${label}`)
+    // 根据选项过滤主题
+    const builtinThemes = allThemes.filter((meta) => isBuiltinTheme(meta.name))
+    const customThemes = allThemes.filter((meta) => !isBuiltinTheme(meta.name))
+
+    // 显示内置主题
+    if (!options.custom) {
+      if (builtinThemes.length > 0) {
+        console.log('')
+        console2.info('内置主题:')
+        builtinThemes.forEach((meta) => {
+          const isCurrent = meta.name === currentTheme
+          const prefix = isCurrent ? '●' : '○'
+          const label = `${meta.name} (${meta.displayName})`
+
+          if (isCurrent) {
+            console.log(`  ${chalk.hex(meta.previewColor)(prefix)} ${chalk.hex(meta.previewColor).bold(label)} ${chalk.gray('(当前)')}`)
+          } else {
+            console.log(`  ${chalk.gray(prefix)} ${label}`)
+          }
+        })
       }
-    })
+    }
 
+    // 显示自定义主题
+    if (!options.builtin) {
+      if (customThemes.length > 0) {
+        console.log('')
+        console2.info('自定义主题:')
+        customThemes.forEach((meta) => {
+          const isCurrent = meta.name === currentTheme
+          const prefix = isCurrent ? '●' : '○'
+          const label = `${meta.name} (${meta.displayName})`
+          const emoji = ' ✨'
+
+          if (isCurrent) {
+            console.log(`  ${chalk.hex(meta.previewColor)(prefix)} ${chalk.hex(meta.previewColor).bold(label)}${emoji} ${chalk.gray('(当前)')}`)
+          } else {
+            console.log(`  ${chalk.gray(prefix)} ${label}${emoji}`)
+          }
+        })
+      } else if (options.custom) {
+        console.log('')
+        console2.muted('  还没有自定义主题')
+        console2.muted('  使用 pls theme create <name> 创建')
+      }
+    }
+
+    console.log('')
     console2.muted('━'.repeat(50))
     console.log('')
   })
 
 themeCmd
-  .argument('[name]', '主题名称 (dark, light)')
+  .argument('[name]', '主题名称')
   .description('切换主题')
-  .action((name?: string) => {
+  .action(async (name?: string) => {
+    const { getThemeMetadata, getAllThemeMetadata, isValidTheme } = await import('../src/ui/theme.js')
+
     if (!name) {
       // 显示当前主题
       const config = getConfig()
       const currentTheme = config.theme || 'dark'
-      const label = currentTheme === 'dark' ? 'dark (深色)' : 'light (浅色)'
-      const color = currentTheme === 'dark' ? '#00D9FF' : '#0284C7'
+      const meta = getThemeMetadata(currentTheme as any)
 
-      console.log('')
-      console.log(`当前主题: ${chalk.hex(color).bold(label)}`)
-      console.log('')
+      if (meta) {
+        console.log('')
+        console.log(`当前主题: ${chalk.hex(meta.previewColor).bold(`${meta.name} (${meta.displayName})`)}`)
+        if (meta.description) {
+          console2.muted(`  ${meta.description}`)
+        }
+        console.log('')
+      }
+
       console2.muted('使用 pls theme list 查看所有主题')
       console2.muted('使用 pls theme <name> 切换主题')
       console.log('')
@@ -291,16 +339,164 @@ themeCmd
 
     // 切换主题
     try {
-      setConfigValue('theme', name)
-      const label = name === 'dark' ? 'dark (深色)' : 'light (浅色)'
-      const color = name === 'dark' ? '#00D9FF' : '#0284C7'
+      // 验证主题是否存在
+      if (!isValidTheme(name)) {
+        const allThemes = getAllThemeMetadata()
+        const themeNames = allThemes.map((m) => m.name).join(', ')
+        throw new Error(`未知主题 "${name}"，可用主题: ${themeNames}`)
+      }
 
+      setConfigValue('theme', name)
+      const meta = getThemeMetadata(name)
+
+      if (meta) {
+        console.log('')
+        console2.success(`已切换到 ${chalk.hex(meta.previewColor).bold(`${meta.name} (${meta.displayName})`)} 主题`)
+        if (meta.description) {
+          console2.muted(`  ${meta.description}`)
+        }
+        console.log('')
+      }
+    } catch (error: any) {
       console.log('')
-      console2.success(`已切换到 ${chalk.hex(color).bold(label)} 主题`)
+      console2.error(error.message)
+      console.log('')
+      process.exit(1)
+    }
+  })
+
+// theme create - 创建主题模板
+themeCmd
+  .command('create <name>')
+  .description('创建自定义主题模板')
+  .option('-d, --display-name <name>', '显示名称')
+  .option('-c, --category <type>', '主题类别 (dark 或 light)', 'dark')
+  .action(async (name: string, options: { displayName?: string; category?: string }) => {
+    const { createThemeTemplate } = await import('../src/ui/theme.js')
+
+    try {
+      // 验证主题名称格式
+      if (!/^[a-z0-9-]+$/.test(name)) {
+        throw new Error('主题名称只能包含小写字母、数字和连字符')
+      }
+
+      // 验证类别
+      const category = options.category as 'dark' | 'light'
+      if (category !== 'dark' && category !== 'light') {
+        throw new Error('主题类别必须是 dark 或 light')
+      }
+
+      // 创建主题目录
+      const themesDir = path.join(os.homedir(), '.please', 'themes')
+      if (!fs.existsSync(themesDir)) {
+        fs.mkdirSync(themesDir, { recursive: true })
+      }
+
+      // 检查主题文件是否已存在
+      const themePath = path.join(themesDir, `${name}.json`)
+      if (fs.existsSync(themePath)) {
+        throw new Error(`主题 "${name}" 已存在`)
+      }
+
+      // 创建主题模板
+      const displayName = options.displayName || name
+      const template = createThemeTemplate(name, displayName, category)
+
+      // 保存到文件
+      fs.writeFileSync(themePath, JSON.stringify(template, null, 2), 'utf-8')
+
+      // 显示成功信息
+      console.log('')
+      console2.success(`已创建主题模板: ${themePath}`)
+      console.log('')
+
+      console2.info('📝 下一步:')
+      console.log(`  1. 编辑主题文件修改颜色配置`)
+      console2.muted(`     vim ${themePath}`)
+      console.log('')
+      console.log(`  2. 验证主题格式`)
+      console2.muted(`     pls theme validate ${themePath}`)
+      console.log('')
+      console.log(`  3. 应用主题查看效果`)
+      console2.muted(`     pls theme ${name}`)
+      console.log('')
+
+      console2.info('💡 提示:')
+      console2.muted('  - 使用在线工具选择颜色: https://colorhunt.co')
+      console2.muted('  - 参考内置主题: pls theme list')
       console.log('')
     } catch (error: any) {
       console.log('')
       console2.error(error.message)
+      console.log('')
+      process.exit(1)
+    }
+  })
+
+// theme validate - 验证主题文件
+themeCmd
+  .command('validate <file>')
+  .description('验证主题文件格式')
+  .action(async (file: string) => {
+    const { validateThemeWithDetails } = await import('../src/ui/theme.js')
+
+    try {
+      // 读取主题文件
+      const themePath = path.isAbsolute(file) ? file : path.join(process.cwd(), file)
+
+      if (!fs.existsSync(themePath)) {
+        throw new Error(`文件不存在: ${themePath}`)
+      }
+
+      const content = fs.readFileSync(themePath, 'utf-8')
+      const theme = JSON.parse(content)
+
+      // 验证主题
+      const result = validateThemeWithDetails(theme)
+
+      console.log('')
+
+      if (result.valid) {
+        console2.success('✓ 主题验证通过')
+        console.log('')
+
+        if (theme.metadata) {
+          console2.info('主题信息:')
+          console.log(`  名称: ${theme.metadata.name} (${theme.metadata.displayName})`)
+          console.log(`  类别: ${theme.metadata.category}`)
+          if (theme.metadata.description) {
+            console.log(`  描述: ${theme.metadata.description}`)
+          }
+          if (theme.metadata.author) {
+            console.log(`  作者: ${theme.metadata.author}`)
+          }
+        }
+
+        console.log('')
+      } else {
+        console2.error('✗ 主题验证失败')
+        console.log('')
+        console2.info('错误列表:')
+        result.errors.forEach((err, idx) => {
+          console.log(`  ${idx + 1}. ${err}`)
+        })
+        console.log('')
+
+        console2.info('修复建议:')
+        console2.muted(`  1. 编辑主题文件: vim ${themePath}`)
+        console2.muted('  2. 参考内置主题格式')
+        console2.muted('  3. 确保所有颜色使用 #RRGGBB 格式')
+        console.log('')
+
+        process.exit(1)
+      }
+    } catch (error: any) {
+      console.log('')
+      if (error.message.includes('Unexpected token')) {
+        console2.error('JSON 格式错误，请检查文件语法')
+      } else {
+        console2.error(error.message)
+      }
       console.log('')
       process.exit(1)
     }

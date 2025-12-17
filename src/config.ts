@@ -3,7 +3,7 @@ import path from 'path'
 import os from 'os'
 import readline from 'readline'
 import chalk from 'chalk'
-import { getCurrentTheme } from './ui/theme.js'
+import { getCurrentTheme, isValidTheme, getAllThemeMetadata, type ThemeName } from './ui/theme.js'
 
 // 获取主题颜色
 function getColors() {
@@ -38,10 +38,6 @@ type Provider = (typeof VALID_PROVIDERS)[number]
 // 编辑模式
 const VALID_EDIT_MODES = ['manual', 'auto'] as const
 type EditMode = (typeof VALID_EDIT_MODES)[number]
-
-// 主题
-const VALID_THEMES = ['dark', 'light'] as const
-export type ThemeName = (typeof VALID_THEMES)[number]
 
 /**
  * 别名配置接口
@@ -193,8 +189,10 @@ export function setConfigValue(key: string, value: string | boolean | number): C
     config.editMode = strValue as EditMode
   } else if (key === 'theme') {
     const strValue = String(value)
-    if (!VALID_THEMES.includes(strValue as ThemeName)) {
-      throw new Error(`theme 必须是以下之一: ${VALID_THEMES.join(', ')}`)
+    if (!isValidTheme(strValue)) {
+      const allThemes = getAllThemeMetadata()
+      const themeNames = allThemes.map((m) => m.name).join(', ')
+      throw new Error(`theme 必须是以下之一: ${themeNames}`)
     }
     config.theme = strValue as ThemeName
   } else if (key === 'apiKey' || key === 'baseUrl' || key === 'model' || key === 'defaultRemote') {
@@ -248,11 +246,12 @@ export function displayConfig(): void {
   console.log(`  ${chalk.hex(colors.primary)('chatHistoryLimit')}:    ${config.chatHistoryLimit} 轮`)
   console.log(`  ${chalk.hex(colors.primary)('commandHistoryLimit')}: ${config.commandHistoryLimit} 条`)
   console.log(`  ${chalk.hex(colors.primary)('shellHistoryLimit')}:   ${config.shellHistoryLimit} 条`)
-  console.log(
-    `  ${chalk.hex(colors.primary)('theme')}:               ${
-      config.theme === 'dark' ? chalk.hex(colors.primary)('dark (深色)') : chalk.hex(colors.primary)('light (浅色)')
-    }`
-  )
+
+  // 动态显示主题信息
+  const themeMetadata = getAllThemeMetadata().find((m) => m.name === config.theme)
+  const themeLabel = themeMetadata ? `${themeMetadata.name} (${themeMetadata.displayName})` : config.theme
+  console.log(`  ${chalk.hex(colors.primary)('theme')}:               ${chalk.hex(colors.primary)(themeLabel)}`)
+
   console.log(chalk.gray('━'.repeat(50)))
   console.log(chalk.gray(`配置文件: ${CONFIG_FILE}\n`))
 }
