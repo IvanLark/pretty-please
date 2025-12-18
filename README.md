@@ -6,7 +6,9 @@
 
 > `please 查看当前目录` — 就像在跟电脑说话一样自然
 
-https://github.com/user-attachments/assets/e06a562c-f899-41d2-8870-d38ebc249904
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/e06a562c-f899-41d2-8870-d38ebc249904" alt="Pretty Please Demo" width="800">
+</p>
 
 ## 这是啥？
 
