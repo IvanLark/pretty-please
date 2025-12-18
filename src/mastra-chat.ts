@@ -1,13 +1,13 @@
 import { Agent } from '@mastra/core'
 import { getConfig } from './config.js'
-import { buildChatSystemPrompt } from './prompts.js'
+import { CHAT_SYSTEM_PROMPT, buildChatUserContext } from './prompts.js'
 import { formatSystemInfo } from './sysinfo.js'
 import { formatHistoryForAI } from './history.js'
 import { formatShellHistoryForAI, getShellHistory } from './shell-hook.js'
 import { getChatHistory, addChatMessage } from './chat-history.js'
 
 /**
- * 创建 Mastra Chat Agent
+ * 创建 Mastra Chat Agent（使用静态系统提示词）
  */
 export function createChatAgent() {
   const config = getConfig()
@@ -15,16 +15,9 @@ export function createChatAgent() {
   // 组合 provider/model 格式（Mastra 要求）
   const modelId = `${config.provider}/${config.model}` as `${string}/${string}`
 
-  // 构建系统提示词
-  const sysinfo = formatSystemInfo()
-  const plsHistory = formatHistoryForAI()
-  const shellHistory = formatShellHistoryForAI()
-  const shellHookEnabled = config.shellHook && getShellHistory().length > 0
-  const systemPrompt = buildChatSystemPrompt(sysinfo, plsHistory, shellHistory, shellHookEnabled)
-
   return new Agent({
     name: 'chat-assistant',
-    instructions: systemPrompt,
+    instructions: CHAT_SYSTEM_PROMPT,  // 只包含静态规则
     model: {
       url: config.baseUrl,
       id: modelId,
@@ -34,19 +27,18 @@ export function createChatAgent() {
 }
 
 /**
- * 获取完整的系统提示词（用于调试）
- */
-export function getChatSystemPrompt(): string {
-  const config = getConfig()
-  const sysinfo = formatSystemInfo()
-  const plsHistory = formatHistoryForAI()
-  const shellHistory = formatShellHistoryForAI()
-  const shellHookEnabled = config.shellHook && getShellHistory().length > 0
-  return buildChatSystemPrompt(sysinfo, plsHistory, shellHistory, shellHookEnabled)
-}
-
-/**
  * 使用 Mastra 进行 AI 对话（支持流式输出）
+ *
+ * 消息结构：
+ * [
+ *   "历史问题1",                          // user (纯粹的问题)
+ *   "历史回答1",                          // assistant
+ *   "历史问题2",                          // user
+ *   "历史回答2",                          // assistant
+ *   "<system_info>...\n                  // user (最新消息，包含完整上下文)
+ *    <command_history>...\n
+ *    <user_question>最新问题</user_question>"
+ * ]
  */
 export async function chatWithMastra(
   prompt: string,
@@ -61,30 +53,44 @@ export async function chatWithMastra(
     model: string
     systemPrompt: string
     chatHistory: Array<{ role: string; content: string }>
-    userPrompt: string
+    userContext: string
   }
 }> {
   const config = getConfig()
   const agent = createChatAgent()
 
-  // 获取对话历史
+  // 1. 获取历史对话（纯粹的问答）
   const chatHistory = getChatHistory()
 
-  // 构建消息数组（将历史和新消息合并）
+  // 2. 构建消息数组
   const messages: string[] = []
 
-  // 添加历史对话
+  // 加载历史对话
   for (const msg of chatHistory) {
     messages.push(msg.content)
   }
 
-  // 添加当前用户消息
-  messages.push(prompt)
+  // 3. 构建最新消息（动态上下文 + 用户问题）
+  const sysinfo = formatSystemInfo()
+  const plsHistory = formatHistoryForAI()
+  const shellHistory = formatShellHistoryForAI()
+  const shellHookEnabled = config.shellHook && getShellHistory().length > 0
 
+  const latestUserContext = buildChatUserContext(
+    prompt,
+    sysinfo,
+    plsHistory,
+    shellHistory,
+    shellHookEnabled
+  )
+
+  messages.push(latestUserContext)
+
+  // 4. 发送给 AI（流式或非流式）
   let fullContent = ''
 
-  // 流式输出模式
   if (options.onChunk) {
+    // 流式输出模式
     const stream = await agent.stream(messages)
 
     for await (const chunk of stream.textStream) {
@@ -103,19 +109,19 @@ export async function chatWithMastra(
     throw new Error('AI 返回了空的响应')
   }
 
-  // 保存对话历史
+  // 5. 保存对话历史（只保存纯粹的问题和回答，不保存 XML）
   addChatMessage(prompt, fullContent)
 
-  // 返回结果
+  // 6. 返回结果
   if (options.debug) {
     return {
       reply: fullContent,
       debug: {
-        sysinfo: formatSystemInfo(),
+        sysinfo,
         model: config.model,
-        systemPrompt: getChatSystemPrompt(),
+        systemPrompt: CHAT_SYSTEM_PROMPT,
         chatHistory,
-        userPrompt: prompt,
+        userContext: latestUserContext,
       },
     }
   }

@@ -98,9 +98,9 @@ const DEFAULT_CONFIG: Config = {
   model: 'gpt-4-turbo',
   provider: 'openai',
   shellHook: false,
-  chatHistoryLimit: 10,
-  commandHistoryLimit: 10,
-  shellHistoryLimit: 15,
+  chatHistoryLimit: 5,
+  commandHistoryLimit: 5,
+  shellHistoryLimit: 10,
   editMode: 'manual',
   theme: 'dark',
   aliases: {},
@@ -368,6 +368,7 @@ export async function runConfigWizard(): Promise<void> {
     }
 
     // 9. Shell History Limit
+    const oldShellHistoryLimit = config.shellHistoryLimit  // 保存旧值
     const shellHistoryPrompt = `${chalk.hex(colors.primary)('Shell 历史保留条数')}\n${chalk.gray('默认:')} ${chalk.hex(colors.secondary)(config.shellHistoryLimit)} ${chalk.gray('→')} `
     const shellHistoryLimit = await question(rl, shellHistoryPrompt)
     if (shellHistoryLimit.trim()) {
@@ -383,6 +384,12 @@ export async function runConfigWizard(): Promise<void> {
     console.log(chalk.hex(getColors().success)('✅ 配置已保存'))
     console.log(chalk.gray(`   ${CONFIG_FILE}`))
     console.log()
+
+    // 如果修改了 shellHistoryLimit，自动重装 hook
+    if (oldShellHistoryLimit !== config.shellHistoryLimit) {
+      const { reinstallHookForLimitChange } = await import('./shell-hook.js')
+      await reinstallHookForLimitChange(oldShellHistoryLimit, config.shellHistoryLimit)
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.log(chalk.hex(getColors().error)(`\n✗ 配置失败: ${message}`))

@@ -1,7 +1,7 @@
 import React from 'react'
 import { Box, Text } from 'ink'
 import { getCurrentTheme } from '../ui/theme.js'
-import { getDisplayWidth } from '../utils/console.js'
+import { getDisplayWidth, wrapText } from '../utils/console.js'
 
 interface CommandBoxProps {
   command: string
@@ -13,14 +13,31 @@ interface CommandBoxProps {
  */
 export const CommandBox: React.FC<CommandBoxProps> = ({ command, title = '生成命令' }) => {
   const theme = getCurrentTheme()
-  const lines = command.split('\n')
+
+  // 获取终端宽度，限制最大宽度
+  const termWidth = process.stdout.columns || 80
   const titleWidth = getDisplayWidth(title)
-  const maxContentWidth = Math.max(...lines.map(l => getDisplayWidth(l)))
-  const boxWidth = Math.max(maxContentWidth + 4, titleWidth + 6, 20)
+
+  // 计算最大内容宽度（终端宽度 - 边框和内边距）
+  const maxContentWidth = termWidth - 6 // 减去 '│ ' 和 ' │' 以及一些余量
+
+  // 处理命令换行
+  const originalLines = command.split('\n')
+  const wrappedLines: string[] = []
+  for (const line of originalLines) {
+    wrappedLines.push(...wrapText(line, maxContentWidth))
+  }
+
+  // 计算实际使用的宽度
+  const actualMaxWidth = Math.max(
+    ...wrappedLines.map((l) => getDisplayWidth(l)),
+    titleWidth
+  )
+  const boxWidth = Math.min(actualMaxWidth + 4, termWidth - 2)
 
   // 顶部边框：┌─ 生成命令 ─────┐
   const topPadding = boxWidth - titleWidth - 5
-  const topBorder = '┌─ ' + title + ' ' + '─'.repeat(topPadding) + '┐'
+  const topBorder = '┌─ ' + title + ' ' + '─'.repeat(Math.max(0, topPadding)) + '┐'
 
   // 底部边框
   const bottomBorder = '└' + '─'.repeat(boxWidth - 2) + '┘'
@@ -28,9 +45,9 @@ export const CommandBox: React.FC<CommandBoxProps> = ({ command, title = '生成
   return (
     <Box flexDirection="column" marginY={1}>
       <Text color={theme.warning}>{topBorder}</Text>
-      {lines.map((line, index) => {
+      {wrappedLines.map((line, index) => {
         const lineWidth = getDisplayWidth(line)
-        const padding = ' '.repeat(boxWidth - lineWidth - 4)
+        const padding = ' '.repeat(Math.max(0, boxWidth - lineWidth - 4))
         return (
           <Text key={index}>
             <Text color={theme.warning}>│ </Text>

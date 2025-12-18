@@ -3,8 +3,13 @@ import { Box, Text } from 'ink'
 import Spinner from 'ink-spinner'
 import { MarkdownDisplay } from './MarkdownDisplay.js'
 import { chatWithMastra } from '../mastra-chat.js'
-import { getChatRoundCount } from '../chat-history.js'
+import { getChatRoundCount, getChatHistory } from '../chat-history.js'
 import { getCurrentTheme } from '../ui/theme.js'
+import { formatSystemInfo } from '../sysinfo.js'
+import { formatHistoryForAI } from '../history.js'
+import { formatShellHistoryForAI, getShellHistory } from '../shell-hook.js'
+import { getConfig } from '../config.js'
+import { CHAT_SYSTEM_PROMPT, buildChatUserContext } from '../prompts.js'
 
 interface ChatProps {
   prompt: string
@@ -19,7 +24,7 @@ interface DebugInfo {
   sysinfo: string
   model: string
   systemPrompt: string
-  userPrompt: string
+  userContext: string
   chatHistory: any[]
 }
 
@@ -32,8 +37,35 @@ export function Chat({ prompt, debug, showRoundCount, onComplete }: ChatProps) {
   const [status, setStatus] = useState<Status>('thinking')
   const [content, setContent] = useState('')
   const [duration, setDuration] = useState(0)
-  const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null)
   const [roundCount] = useState(getChatRoundCount())
+
+  // Debug 信息：直接在 useState 初始化时计算（同步）
+  const [debugInfo] = useState<DebugInfo | null>(() => {
+    if (!debug) return null
+
+    const config = getConfig()
+    const sysinfo = formatSystemInfo()
+    const plsHistory = formatHistoryForAI()
+    const shellHistory = formatShellHistoryForAI()
+    const shellHookEnabled = config.shellHook && getShellHistory().length > 0
+    const chatHistory = getChatHistory()
+
+    const userContext = buildChatUserContext(
+      prompt,
+      sysinfo,
+      plsHistory,
+      shellHistory,
+      shellHookEnabled
+    )
+
+    return {
+      sysinfo,
+      model: config.model,
+      systemPrompt: CHAT_SYSTEM_PROMPT,
+      userContext,
+      chatHistory,
+    }
+  })
 
   useEffect(() => {
     const startTime = Date.now()
@@ -45,17 +77,13 @@ export function Chat({ prompt, debug, showRoundCount, onComplete }: ChatProps) {
     }
 
     // 调用 AI
-    chatWithMastra(prompt, { debug: debug || false, onChunk })
+    chatWithMastra(prompt, { debug: false, onChunk })  // 不需要 AI 返回 debug
       .then((result) => {
         const endTime = Date.now()
         setDuration(endTime - startTime)
         setStatus('done')
 
-        if (debug && typeof result === 'object' && 'debug' in result && result.debug) {
-          setDebugInfo(result.debug)
-        }
-
-        setTimeout(onComplete, 100)
+        setTimeout(onComplete, debug ? 500 : 100)
       })
       .catch((error: any) => {
         setStatus('error')
@@ -66,6 +94,38 @@ export function Chat({ prompt, debug, showRoundCount, onComplete }: ChatProps) {
 
   return (
     <Box flexDirection="column">
+      {/* 调试信息 - 放在最前面 */}
+      {debugInfo && (
+        <Box flexDirection="column" marginBottom={1}>
+          <Text color={theme.accent} bold>━━━ 调试信息 ━━━</Text>
+          <Text color={theme.text.secondary}>模型: {debugInfo.model}</Text>
+          <Text color={theme.text.secondary}>对话历史轮数: {Math.floor(debugInfo.chatHistory.length / 2)}</Text>
+
+          {/* 历史对话（只显示用户问题） */}
+          {debugInfo.chatHistory.length > 0 && (
+            <Box flexDirection="column" marginTop={1}>
+              <Text color={theme.text.secondary}>历史对话（用户问题）:</Text>
+              {debugInfo.chatHistory
+                .filter((msg) => msg.role === 'user')
+                .slice(-5)  // 最多显示最近 5 条
+                .map((msg, idx) => (
+                  <Text key={idx} color={theme.text.muted}>
+                    {idx + 1}. {msg.content.substring(0, 50)}{msg.content.length > 50 ? '...' : ''}
+                  </Text>
+                ))}
+            </Box>
+          )}
+
+          {/* User Context */}
+          <Box flexDirection="column" marginTop={1}>
+            <Text color={theme.text.secondary}>User Context (最新消息):</Text>
+            <Text color={theme.text.muted}>{debugInfo.userContext.substring(0, 500)}...</Text>
+          </Box>
+
+          <Text color={theme.accent}>━━━━━━━━━━━━━━━━</Text>
+        </Box>
+      )}
+
       {/* 显示对话轮数 */}
       {showRoundCount && roundCount > 0 && (
         <Box marginBottom={1}>
@@ -100,22 +160,6 @@ export function Chat({ prompt, debug, showRoundCount, onComplete }: ChatProps) {
       {status === 'done' && duration > 0 && (
         <Box marginTop={1}>
           <Text color={theme.text.secondary}>({(duration / 1000).toFixed(2)}s)</Text>
-        </Box>
-      )}
-
-      {/* 调试信息 */}
-      {debugInfo && (
-        <Box flexDirection="column" marginY={1}>
-          <Text color={theme.accent}>━━━ 调试信息 ━━━</Text>
-          <Text color={theme.text.secondary}>系统信息: {debugInfo.sysinfo}</Text>
-          <Text color={theme.text.secondary}>模型: {debugInfo.model}</Text>
-          <Text color={theme.text.secondary}>
-            对话历史轮数: {Math.floor(debugInfo.chatHistory.length / 2)}
-          </Text>
-          <Text color={theme.text.secondary}>System Prompt:</Text>
-          <Text dimColor>{debugInfo.systemPrompt}</Text>
-          <Text color={theme.text.secondary}>User Prompt: {debugInfo.userPrompt}</Text>
-          <Text color={theme.accent}>━━━━━━━━━━━━━━━━</Text>
         </Box>
       )}
     </Box>

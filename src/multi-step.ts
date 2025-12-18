@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { createShellAgent } from './mastra-agent.js'
-import { buildCommandSystemPrompt } from './prompts.js'
+import { SHELL_COMMAND_SYSTEM_PROMPT, buildUserContextPrompt } from './prompts.js'
 import { formatSystemInfo } from './sysinfo.js'
 import { formatHistoryForAI } from './history.js'
 import { formatShellHistoryForAI, getShellHistory } from './shell-hook.js'
@@ -39,33 +39,17 @@ export interface RemoteContext {
 }
 
 /**
- * 生成系统上下文信息（供 Mastra 使用）
+ * 获取静态 System Prompt（供 Mastra 使用）
  */
 export function getFullSystemPrompt() {
-  const config = getConfig()
-  const sysinfo = formatSystemInfo()
-  const plsHistory = formatHistoryForAI()
-  const shellHistory = formatShellHistoryForAI()
-  const shellHookEnabled = config.shellHook && getShellHistory().length > 0
-
-  return buildCommandSystemPrompt(sysinfo, plsHistory, shellHistory, shellHookEnabled)
+  return SHELL_COMMAND_SYSTEM_PROMPT
 }
 
 /**
- * 生成远程系统上下文信息
+ * 获取静态 System Prompt（远程执行也使用相同的 System Prompt）
  */
 export function getRemoteFullSystemPrompt(remoteContext: RemoteContext) {
-  // 格式化远程系统信息
-  const sysinfo = formatRemoteSysInfoForAI(remoteContext.name, remoteContext.sysInfo)
-
-  // 格式化远程 pls 命令历史
-  const plsHistory = formatRemoteHistoryForAI(remoteContext.name)
-
-  // 格式化远程 shell 历史
-  const shellHistory = formatRemoteShellHistoryForAI(remoteContext.shellHistory)
-  const shellHookEnabled = remoteContext.shellHistory.length > 0
-
-  return buildCommandSystemPrompt(sysinfo, plsHistory, shellHistory, shellHookEnabled)
+  return SHELL_COMMAND_SYSTEM_PROMPT
 }
 
 /**
@@ -78,26 +62,35 @@ export async function generateMultiStepCommand(
 ): Promise<{ stepData: CommandStep; debugInfo?: any }> {
   const agent = createShellAgent()
 
-  // 根据是否有远程上下文选择不同的系统提示词
-  const fullSystemPrompt = options.remoteContext
-    ? getRemoteFullSystemPrompt(options.remoteContext)
-    : getFullSystemPrompt()
+  // 准备动态数据
+  let sysinfoStr = ''
+  let historyStr = ''
 
-  // 构建消息数组（string[] 格式）
-  const messages: string[] = [userPrompt]
+  if (options.remoteContext) {
+    // 远程执行：格式化远程系统信息和历史
+    sysinfoStr = formatRemoteSysInfoForAI(options.remoteContext.name, options.remoteContext.sysInfo)
+    const plsHistory = formatRemoteHistoryForAI(options.remoteContext.name)
+    const shellHistory = formatRemoteShellHistoryForAI(options.remoteContext.shellHistory)
+    historyStr = options.remoteContext.shellHistory.length > 0 ? shellHistory : plsHistory
+  } else {
+    // 本地执行：格式化本地系统信息和历史
+    sysinfoStr = formatSystemInfo()
+    const config = getConfig()
+    const plsHistory = formatHistoryForAI()
+    const shellHistory = formatShellHistoryForAI()
+    historyStr = (config.shellHook && getShellHistory().length > 0) ? shellHistory : plsHistory
+  }
 
-  // 添加之前步骤的执行结果
-  previousSteps.forEach((step) => {
-    messages.push(
-      JSON.stringify({
-        command: step.command,
-        continue: step.continue,
-        reasoning: step.reasoning,
-        nextStepHint: step.nextStepHint,
-      })
-    )
-    messages.push(`命令已执行\n退出码: ${step.exitCode}\n输出:\n${step.output.slice(0, 500)}`)
-  })
+  // 构建包含所有动态数据的 User Prompt（XML 格式）
+  const userContextPrompt = buildUserContextPrompt(
+    userPrompt,
+    sysinfoStr,
+    historyStr,
+    previousSteps
+  )
+
+  // 只发送一条 User Message
+  const messages = [userContextPrompt]
 
   // 调用 Mastra Agent 生成结构化输出
   const response = await agent.generate(messages, {
@@ -114,14 +107,16 @@ export async function generateMultiStepCommand(
     return {
       stepData,
       debugInfo: {
-        fullPrompt: fullSystemPrompt,
-        userPrompt,
+        systemPrompt: SHELL_COMMAND_SYSTEM_PROMPT,
+        userPrompt: userContextPrompt,
         previousStepsCount: previousSteps.length,
         response: stepData,
-        remoteContext: options.remoteContext ? {
-          name: options.remoteContext.name,
-          sysInfo: options.remoteContext.sysInfo,
-        } : undefined,
+        remoteContext: options.remoteContext
+          ? {
+              name: options.remoteContext.name,
+              sysInfo: options.remoteContext.sysInfo,
+            }
+          : undefined,
       },
     }
   }

@@ -127,10 +127,19 @@ function executeCommand(command: string): Promise<{ exitCode: number; output: st
 
     console.log('') // 空行
 
-    // 计算命令框宽度，让分隔线长度一致
+    // 计算命令框宽度，让分隔线长度一致（限制终端宽度）
+    const termWidth = process.stdout.columns || 80
+    const maxContentWidth = termWidth - 6
     const lines = command.split('\n')
-    const maxContentWidth = Math.max(...lines.map(l => console2.getDisplayWidth(l)))
-    const boxWidth = Math.max(maxContentWidth + 4, console2.getDisplayWidth('生成命令') + 6, 20)
+    const wrappedLines: string[] = []
+    for (const line of lines) {
+      wrappedLines.push(...console2.wrapText(line, maxContentWidth))
+    }
+    const actualMaxWidth = Math.max(
+      ...wrappedLines.map((l) => console2.getDisplayWidth(l)),
+      console2.getDisplayWidth('生成命令')
+    )
+    const boxWidth = Math.min(actualMaxWidth + 4, termWidth - 2)
     console2.printSeparator('输出', boxWidth)
 
     // 使用 bash 并启用 pipefail，确保管道中任何命令失败都能正确返回非零退出码
@@ -218,11 +227,21 @@ configCmd
 configCmd
   .command('set <key> <value>')
   .description('设置配置项 (apiKey, baseUrl, provider, model, shellHook, chatHistoryLimit)')
-  .action((key, value) => {
+  .action(async (key, value) => {
     try {
+      const oldConfig = getConfig()
+      const oldShellHistoryLimit = oldConfig.shellHistoryLimit
+
       setConfigValue(key, value)
       console.log('')
       console2.success(`已设置 ${key}`)
+
+      // 如果修改了 shellHistoryLimit，自动重装 hook
+      if (key === 'shellHistoryLimit') {
+        const { reinstallHookForLimitChange } = await import('../src/shell-hook.js')
+        await reinstallHookForLimitChange(oldShellHistoryLimit, Number(value))
+      }
+
       console.log('')
     } catch (error: any) {
       console.log('')
@@ -1158,24 +1177,17 @@ remoteCmd.action(() => {
   displayRemotes()
 })
 
-// chat 子命令
-const chatCmd = program.command('chat').description('AI 对话模式，问答、讲解命令')
-
-chatCmd
-  .command('clear')
-  .description('清空对话历史')
-  .action(() => {
-    clearChatHistory()
-    console.log('')
-    console2.success('对话历史已清空')
-    console.log('')
-  })
-
-// 默认 chat 命令（进行对话）
-chatCmd
-  .argument('[prompt...]', '你的问题')
+// chat 命令（AI 对话）
+program
+  .command('chat')
+  .description('AI 对话模式，问答、讲解命令')
+  .argument('[prompt...]', '你的问题（不提供则显示状态）')
   .option('-d, --debug', '显示调试信息')
   .action((promptArgs, options) => {
+    // Workaround: Commander.js 14.x 的子命令 option 解析有 bug
+    // 直接从 process.argv 检查 --debug
+    const debug = process.argv.includes('--debug') || process.argv.includes('-d')
+
     const prompt = promptArgs.join(' ')
 
     if (!prompt.trim()) {
@@ -1191,8 +1203,8 @@ chatCmd
       console2.muted('━'.repeat(40))
       console.log('')
       console2.muted('用法:')
-      console2.info('  pls chat <问题>    与 AI 对话')
-      console2.info('  pls chat clear     清空对话历史')
+      console2.info('  pls chat <问题>          与 AI 对话')
+      console2.info('  pls history chat clear   清空对话历史')
       console.log('')
       return
     }
@@ -1215,7 +1227,7 @@ chatCmd
       render(
         React.createElement(Chat, {
           prompt,
-          debug: options.debug,
+          debug: debug,  // 使用 debug 变量
           showRoundCount: true,
           onComplete: () => process.exit(0),
         })
@@ -1493,9 +1505,6 @@ program
 
         // 处理步骤结果
         if (!stepResult || stepResult.cancelled) {
-          console.log('')
-          console2.muted('已取消执行')
-          console.log('')
           process.exit(0)
         }
 
@@ -1691,10 +1700,19 @@ async function executeRemoteCommand(
 
   console.log('') // 空行
 
-  // 计算命令框宽度，让分隔线长度一致
+  // 计算命令框宽度，让分隔线长度一致（限制终端宽度）
+  const termWidth = process.stdout.columns || 80
+  const maxContentWidth = termWidth - 6
   const lines = command.split('\n')
-  const maxContentWidth = Math.max(...lines.map(l => console2.getDisplayWidth(l)))
-  const boxWidth = Math.max(maxContentWidth + 4, console2.getDisplayWidth('生成命令') + 6, 20)
+  const wrappedLines: string[] = []
+  for (const line of lines) {
+    wrappedLines.push(...console2.wrapText(line, maxContentWidth))
+  }
+  const actualMaxWidth = Math.max(
+    ...wrappedLines.map((l) => console2.getDisplayWidth(l)),
+    console2.getDisplayWidth('生成命令')
+  )
+  const boxWidth = Math.min(actualMaxWidth + 4, termWidth - 2)
   console2.printSeparator(`远程输出 (${remoteName})`, boxWidth)
 
   try {

@@ -37,23 +37,94 @@ export function getDisplayWidth(str: string): number {
 }
 
 /**
+ * 将长文本按指定宽度自动换行（智能分词）
+ */
+export function wrapText(text: string, maxWidth: number): string[] {
+  if (getDisplayWidth(text) <= maxWidth) {
+    return [text]
+  }
+
+  const lines: string[] = []
+  const words = text.split(' ')
+  let currentLine = ''
+
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word
+    const testWidth = getDisplayWidth(testLine)
+
+    if (testWidth <= maxWidth) {
+      currentLine = testLine
+    } else {
+      // 如果当前行有内容，先保存
+      if (currentLine) {
+        lines.push(currentLine)
+        currentLine = word
+      } else {
+        // 单个单词太长，强制拆分
+        let remaining = word
+        while (remaining.length > 0) {
+          let chunk = ''
+          for (const char of remaining) {
+            if (getDisplayWidth(chunk + char) <= maxWidth) {
+              chunk += char
+            } else {
+              break
+            }
+          }
+          if (chunk.length === 0) {
+            // 防止死循环，至少取一个字符
+            chunk = remaining[0]
+          }
+          lines.push(chunk)
+          remaining = remaining.slice(chunk.length)
+        }
+      }
+    }
+  }
+
+  // 添加最后一行
+  if (currentLine) {
+    lines.push(currentLine)
+  }
+
+  return lines
+}
+
+/**
  * 绘制命令框（原生版本）
  */
 export function drawCommandBox(command: string, title: string = '生成命令'): void {
   const colors = getColors()
-  const lines = command.split('\n')
+
+  // 获取终端宽度，限制最大宽度
+  const termWidth = process.stdout.columns || 80
   const titleWidth = getDisplayWidth(title)
-  const maxContentWidth = Math.max(...lines.map((l) => getDisplayWidth(l)))
-  const boxWidth = Math.max(maxContentWidth + 4, titleWidth + 6, 20)
+
+  // 计算最大内容宽度（终端宽度 - 边框和内边距）
+  const maxContentWidth = termWidth - 6 // 减去 '│ ' 和 ' │' 以及一些余量
+
+  // 处理命令换行
+  const originalLines = command.split('\n')
+  const wrappedLines: string[] = []
+  for (const line of originalLines) {
+    wrappedLines.push(...wrapText(line, maxContentWidth))
+  }
+
+  // 计算实际使用的宽度
+  const actualMaxWidth = Math.max(
+    ...wrappedLines.map((l) => getDisplayWidth(l)),
+    titleWidth
+  )
+  const boxWidth = Math.min(actualMaxWidth + 4, termWidth - 2)
 
   const topPadding = boxWidth - titleWidth - 5
-  const topBorder = '┌─ ' + title + ' ' + '─'.repeat(topPadding) + '┐'
+  const topBorder = '┌─ ' + title + ' ' + '─'.repeat(Math.max(0, topPadding)) + '┐'
   const bottomBorder = '└' + '─'.repeat(boxWidth - 2) + '┘'
 
   console.log(chalk.hex(colors.warning)(topBorder))
-  for (const line of lines) {
+  for (const line of wrappedLines) {
     const lineWidth = getDisplayWidth(line)
-    const padding = ' '.repeat(boxWidth - lineWidth - 4)
+    const padding = ' '.repeat(Math.max(0, boxWidth - lineWidth - 4))
     console.log(
       chalk.hex(colors.warning)('│ ') + chalk.hex(colors.primary)(line) + padding + chalk.hex(colors.warning)(' │')
     )

@@ -19,7 +19,6 @@ function getColors() {
 }
 
 const SHELL_HISTORY_FILE = path.join(CONFIG_DIR, 'shell_history.jsonl')
-const MAX_SHELL_HISTORY = 20
 
 // Hook 标记，用于识别我们添加的内容
 const HOOK_START_MARKER = '# >>> pretty-please shell hook >>>'
@@ -86,6 +85,9 @@ export function getShellConfigPath(shellType: ShellType): string | null {
  * 生成 zsh hook 脚本
  */
 function generateZshHook(): string {
+  const config = getConfig()
+  const limit = config.shellHistoryLimit || 10  // 从配置读取
+
   return `
 ${HOOK_START_MARKER}
 # 记录命令到 pretty-please 历史
@@ -102,8 +104,8 @@ __pls_precmd() {
     # 转义命令中的特殊字符
     local escaped_cmd=$(echo "$__PLS_LAST_CMD" | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g')
     echo "{\\"cmd\\":\\"$escaped_cmd\\",\\"exit\\":$exit_code,\\"time\\":\\"$timestamp\\"}" >> "${CONFIG_DIR}/shell_history.jsonl"
-    # 保持文件不超过 ${MAX_SHELL_HISTORY} 行
-    tail -n ${MAX_SHELL_HISTORY} "${CONFIG_DIR}/shell_history.jsonl" > "${CONFIG_DIR}/shell_history.jsonl.tmp" && mv "${CONFIG_DIR}/shell_history.jsonl.tmp" "${CONFIG_DIR}/shell_history.jsonl"
+    # 保持文件不超过 ${limit} 行（从配置读取）
+    tail -n ${limit} "${CONFIG_DIR}/shell_history.jsonl" > "${CONFIG_DIR}/shell_history.jsonl.tmp" && mv "${CONFIG_DIR}/shell_history.jsonl.tmp" "${CONFIG_DIR}/shell_history.jsonl"
     unset __PLS_LAST_CMD
   fi
 }
@@ -119,6 +121,9 @@ ${HOOK_END_MARKER}
  * 生成 bash hook 脚本
  */
 function generateBashHook(): string {
+  const config = getConfig()
+  const limit = config.shellHistoryLimit || 10  // 从配置读取
+
   return `
 ${HOOK_START_MARKER}
 # 记录命令到 pretty-please 历史
@@ -130,7 +135,7 @@ __pls_prompt_command() {
     local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     local escaped_cmd=$(echo "$last_cmd" | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g')
     echo "{\\"cmd\\":\\"$escaped_cmd\\",\\"exit\\":$exit_code,\\"time\\":\\"$timestamp\\"}" >> "${CONFIG_DIR}/shell_history.jsonl"
-    tail -n ${MAX_SHELL_HISTORY} "${CONFIG_DIR}/shell_history.jsonl" > "${CONFIG_DIR}/shell_history.jsonl.tmp" && mv "${CONFIG_DIR}/shell_history.jsonl.tmp" "${CONFIG_DIR}/shell_history.jsonl"
+    tail -n ${limit} "${CONFIG_DIR}/shell_history.jsonl" > "${CONFIG_DIR}/shell_history.jsonl.tmp" && mv "${CONFIG_DIR}/shell_history.jsonl.tmp" "${CONFIG_DIR}/shell_history.jsonl"
   fi
 }
 
@@ -145,6 +150,9 @@ ${HOOK_END_MARKER}
  * 生成 PowerShell hook 脚本
  */
 function generatePowerShellHook(): string {
+  const config = getConfig()
+  const limit = config.shellHistoryLimit || 10  // 从配置读取
+
   return `
 ${HOOK_START_MARKER}
 # 记录命令到 pretty-please 历史
@@ -160,8 +168,8 @@ function __Pls_RecordCommand {
         $escapedCmd = $lastCmd -replace '\\\\', '\\\\\\\\' -replace '"', '\\\\"'
         $json = "{\`"cmd\`":\`"$escapedCmd\`",\`"exit\`":$exitCode,\`"time\`":\`"$timestamp\`"}"
         Add-Content -Path "${CONFIG_DIR}/shell_history.jsonl" -Value $json
-        # 保持文件不超过 ${MAX_SHELL_HISTORY} 行
-        $content = Get-Content "${CONFIG_DIR}/shell_history.jsonl" -Tail ${MAX_SHELL_HISTORY}
+        # 保持文件不超过 ${limit} 行（从配置读取）
+        $content = Get-Content "${CONFIG_DIR}/shell_history.jsonl" -Tail ${limit}
         $content | Set-Content "${CONFIG_DIR}/shell_history.jsonl"
     }
 }
@@ -314,7 +322,7 @@ export function getShellHistory(): ShellHistoryItem[] {
       .split('\n')
       .filter((line) => line.trim())
 
-    return lines
+    const allHistory = lines
       .map((line) => {
         try {
           return JSON.parse(line) as ShellHistoryItem
@@ -323,6 +331,10 @@ export function getShellHistory(): ShellHistoryItem[] {
         }
       })
       .filter((item): item is ShellHistoryItem => item !== null)
+
+    // 应用 shellHistoryLimit 限制：只返回最近的 N 条
+    const limit = config.shellHistoryLimit || 15
+    return allHistory.slice(-limit)
   } catch {
     return []
   }
@@ -506,6 +518,49 @@ export function displayShellHistory(): void {
 }
 
 /**
+ * 当 shellHistoryLimit 变化时，自动重装 Hook
+ * 返回是否成功重装
+ */
+export async function reinstallHookForLimitChange(oldLimit: number, newLimit: number): Promise<boolean> {
+  const config = getConfig()
+
+  // 只有在 hook 已启用时才重装
+  if (!config.shellHook) {
+    return false
+  }
+
+  // 值没有变化，不需要重装
+  if (oldLimit === newLimit) {
+    return false
+  }
+
+  const colors = getColors()
+
+  console.log('')
+  console.log(chalk.hex(colors.primary)(`检测到 shellHistoryLimit 变化 (${oldLimit} → ${newLimit})`))
+  console.log(chalk.hex(colors.primary)('正在更新 Shell Hook...'))
+
+  uninstallShellHook()
+  await installShellHook()
+
+  console.log('')
+  console.log(chalk.hex(colors.warning)('⚠️  请重启终端或运行以下命令使新配置生效:'))
+
+  const shellType = detectShell()
+  let configFile = '~/.zshrc'
+  if (shellType === 'bash') {
+    configFile = process.platform === 'darwin' ? '~/.bash_profile' : '~/.bashrc'
+  } else if (shellType === 'powershell') {
+    configFile = '~/Documents/PowerShell/Microsoft.PowerShell_profile.ps1'
+  }
+
+  console.log(chalk.gray(`  source ${configFile}`))
+  console.log('')
+
+  return true
+}
+
+/**
  * 清空 shell 历史
  */
 export function clearShellHistory(): void {
@@ -524,6 +579,9 @@ export function clearShellHistory(): void {
  * 生成远程 zsh hook 脚本
  */
 function generateRemoteZshHook(): string {
+  const config = getConfig()
+  const limit = config.shellHistoryLimit || 10  // 从配置读取
+
   return `
 ${HOOK_START_MARKER}
 # 记录命令到 pretty-please 历史
@@ -542,8 +600,8 @@ __pls_precmd() {
     # 转义命令中的特殊字符
     local escaped_cmd=$(echo "$__PLS_LAST_CMD" | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g')
     echo "{\\"cmd\\":\\"$escaped_cmd\\",\\"exit\\":$exit_code,\\"time\\":\\"$timestamp\\"}" >> ~/.please/shell_history.jsonl
-    # 保持文件不超过 50 行
-    tail -n 50 ~/.please/shell_history.jsonl > ~/.please/shell_history.jsonl.tmp && mv ~/.please/shell_history.jsonl.tmp ~/.please/shell_history.jsonl
+    # 保持文件不超过 ${limit} 行（从配置读取）
+    tail -n ${limit} ~/.please/shell_history.jsonl > ~/.please/shell_history.jsonl.tmp && mv ~/.please/shell_history.jsonl.tmp ~/.please/shell_history.jsonl
     unset __PLS_LAST_CMD
   fi
 }
@@ -559,6 +617,9 @@ ${HOOK_END_MARKER}
  * 生成远程 bash hook 脚本
  */
 function generateRemoteBashHook(): string {
+  const config = getConfig()
+  const limit = config.shellHistoryLimit || 10  // 从配置读取
+
   return `
 ${HOOK_START_MARKER}
 # 记录命令到 pretty-please 历史
@@ -572,7 +633,7 @@ __pls_prompt_command() {
     mkdir -p ~/.please
     local escaped_cmd=$(echo "$last_cmd" | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g')
     echo "{\\"cmd\\":\\"$escaped_cmd\\",\\"exit\\":$exit_code,\\"time\\":\\"$timestamp\\"}" >> ~/.please/shell_history.jsonl
-    tail -n 50 ~/.please/shell_history.jsonl > ~/.please/shell_history.jsonl.tmp && mv ~/.please/shell_history.jsonl.tmp ~/.please/shell_history.jsonl
+    tail -n ${limit} ~/.please/shell_history.jsonl > ~/.please/shell_history.jsonl.tmp && mv ~/.please/shell_history.jsonl.tmp ~/.please/shell_history.jsonl
   fi
 }
 
