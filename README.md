@@ -24,20 +24,46 @@ pls 在服务器上重启 nginx
 
 AI 生成命令 → 你确认 → 执行 → 搞定。
 
+## ✨ 命令打错了？直接 `pls` 就行
+
+像 [thefuck](https://github.com/nvbn/thefuck) 一样，命令执行失败后，直接输入 `pls` 让 AI 自动修复：
+
+```bash
+❯ python --version
+zsh: command not found: python
+
+❯ pls  # ← 就这么简单！
+✓ 生成命令: python3 --version
+Python 3.9.6
+```
+
+```bash
+❯ git pus origin main
+git: 'pus' is not a git command. See 'git --help'.
+
+❯ pls
+✓ 生成命令: git push origin main
+Enumerating objects: 5, done.
+...
+```
+
+不用说"修复上一条命令"，不用重新输入，**直接 `pls`，AI 自动检测失败的命令并生成正确版本**。
+
 ## 为什么用这个？
 
+- **命令打错了？** 直接 `pls` 自动修复，像 thefuck 一样方便，但更智能
 - 记不住 `tar` 的一堆参数
 - 想批量处理文件但懒得写脚本
 - 需要在多台服务器上执行同样的操作
-- 命令跑失败了不知道咋办
 - 想问问某个命令怎么用
 
 ## 能干啥？
 
-**基础功能：**
-- 自然语言转 Shell 命令，生成前让你确认或编辑
-- 复杂任务自动拆成多步，每步基于上一步的结果
-- 命令失败了 AI 会分析原因并调整策略重试
+**核心特性：**
+- **自动修复错误** - 命令失败后直接 `pls`，AI 自动检测并生成正确命令（像 thefuck，但更智能）
+- **自然语言转命令** - 生成前让你确认或编辑
+- **智能多步任务** - 复杂任务自动拆分，每步基于上一步的结果
+- **错误恢复重试** - 命令失败了 AI 会分析原因并调整策略
 
 **高级功能：**
 - **远程执行** - 通过 SSH 在服务器上跑命令，支持批量（`-r server1,server2,server3`）
@@ -406,6 +432,7 @@ MIT
 
 ## 致谢
 
+- [thefuck](https://github.com/nvbn/thefuck) - 启发了自动修复功能，一个超火的命令纠错工具
 - [fuckit.sh](https://github.com/faithleysath/fuckit.sh) - 提供了灵感，一个优雅的 AI 命令行工具
 - [Ink](https://github.com/vadimdemedes/ink) - 终端 React 渲染器
 - [Mastra](https://mastra.ai) - AI Agent 框架

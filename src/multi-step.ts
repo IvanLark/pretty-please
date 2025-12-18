@@ -75,10 +75,11 @@ export async function generateMultiStepCommand(
   } else {
     // 本地执行：格式化本地系统信息和历史
     sysinfoStr = formatSystemInfo()
-    const config = getConfig()
     const plsHistory = formatHistoryForAI()
-    const shellHistory = formatShellHistoryForAI()
-    historyStr = (config.shellHook && getShellHistory().length > 0) ? shellHistory : plsHistory
+    // 使用统一的历史获取接口（自动降级到系统历史）
+    const { formatShellHistoryForAIWithFallback } = await import('./shell-hook.js')
+    const shellHistory = formatShellHistoryForAIWithFallback()
+    historyStr = shellHistory || plsHistory  // 优先使用 shell 历史，降级到 pls 历史
   }
 
   // 构建包含所有动态数据的 User Prompt（XML 格式）

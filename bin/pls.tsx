@@ -1240,7 +1240,7 @@ program
   .argument('[prompt...]', '自然语言描述你想执行的操作')
   .option('-d, --debug', '显示调试信息（系统信息、完整 prompt 等）')
   .option('-r, --remote [name]', '在远程服务器上执行（不指定则使用默认服务器）')
-  .action((promptArgs, options) => {
+  .action(async (promptArgs, options) => {
     // 智能处理 -r 参数：如果 -r 后面的值不是已注册的服务器名，把它当作 prompt 的一部分
     if (typeof options.remote === 'string' && !getRemote(options.remote)) {
       // "查看当前目录" 不是服务器名，放回 prompt
@@ -1248,12 +1248,32 @@ program
       options.remote = true  // 改为使用默认服务器
     }
 
-    if (promptArgs.length === 0) {
-      program.help()
-      return
-    }
+    let prompt = ''
 
-    let prompt = promptArgs.join(' ')
+    if (promptArgs.length === 0) {
+      // 无参数时：尝试自动检测上一条失败的命令
+      const { getLastNonPlsCommand } = await import('../src/shell-hook.js')
+      const lastCmd = getLastNonPlsCommand()
+
+      if (lastCmd && lastCmd.exit !== 0) {
+        // 找到了失败的命令，自动生成 prompt
+        prompt = `上一条命令「${lastCmd.cmd}」执行失败，退出码：${lastCmd.exit}。请生成正确的命令。`
+
+        if (options.debug) {
+          console.log('')
+          console2.muted(`自动检测到失败命令: ${lastCmd.cmd} (退出码: ${lastCmd.exit})`)
+          console2.muted(`生成 prompt: ${prompt}`)
+        }
+
+        // 继续执行命令生成流程（不 return）
+      } else {
+        // 没有失败的命令，显示帮助
+        program.help()
+        return
+      }
+    } else {
+      prompt = promptArgs.join(' ')
+    }
 
     if (!prompt.trim()) {
       console.log('')

@@ -73,8 +73,10 @@ export async function chatWithMastra(
   // 3. 构建最新消息（动态上下文 + 用户问题）
   const sysinfo = formatSystemInfo()
   const plsHistory = formatHistoryForAI()
-  const shellHistory = formatShellHistoryForAI()
-  const shellHookEnabled = config.shellHook && getShellHistory().length > 0
+  // 使用统一的历史获取接口（自动降级到系统历史）
+  const { formatShellHistoryForAIWithFallback } = await import('./shell-hook.js')
+  const shellHistory = formatShellHistoryForAIWithFallback()
+  const shellHookEnabled = !!shellHistory  // 如果有 shell 历史就视为启用
 
   const latestUserContext = buildChatUserContext(
     prompt,

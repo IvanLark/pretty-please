@@ -573,6 +573,82 @@ export function clearShellHistory(): void {
   console.log('')
 }
 
+// ================== 统一历史获取 ==================
+
+/**
+ * 获取 shell 历史（统一接口）
+ * 优先使用 shell hook，降级到系统历史文件
+ *
+ * 这是推荐的历史获取方式，会自动选择最佳来源：
+ * 1. 优先：shell hook（有退出码，最准确）
+ * 2. 降级：系统历史文件（无退出码，兼容未安装 hook 的情况）
+ */
+export function getShellHistoryWithFallback(): ShellHistoryItem[] {
+  const config = getConfig()
+
+  // 优先使用 shell hook
+  if (config.shellHook) {
+    const history = getShellHistory()
+    if (history.length > 0) {
+      return history
+    }
+  }
+
+  // 降级到系统历史文件
+  const { getSystemShellHistory } = require('./system-history.js')
+  return getSystemShellHistory()
+}
+
+/**
+ * 获取最近一条非 pls 的命令（统一接口）
+ * 自动选择最佳历史来源
+ */
+export function getLastNonPlsCommand(): ShellHistoryItem | null {
+  const history = getShellHistoryWithFallback()
+
+  // 从后往前找第一条非 pls 命令
+  for (let i = history.length - 1; i >= 0; i--) {
+    const item = history[i]
+    if (!item.cmd.startsWith('pls') && !item.cmd.startsWith('please')) {
+      return item
+    }
+  }
+
+  return null
+}
+
+/**
+ * 格式化 shell 历史供 AI 使用（统一接口）
+ * 自动选择最佳历史来源
+ */
+export function formatShellHistoryForAIWithFallback(): string {
+  const config = getConfig()
+
+  // 如果启用了 shell hook 且有记录，使用 hook 历史（包含详细信息）
+  if (config.shellHook) {
+    const hookHistory = getShellHistory()
+    if (hookHistory.length > 0) {
+      return formatShellHistoryForAI()
+    }
+  }
+
+  // 降级到系统历史
+  const { getSystemShellHistory } = require('./system-history.js')
+  const history = getSystemShellHistory()
+
+  if (history.length === 0) {
+    return ''
+  }
+
+  // 格式化系统历史（简单格式，无详细信息）
+  const lines = history.map((item, index) => {
+    const status = item.exit === 0 ? '✓' : `✗ 退出码:${item.exit}`
+    return `${index + 1}. ${item.cmd} ${status}`
+  })
+
+  return `【用户终端最近执行的命令（来自系统历史）】\n${lines.join('\n')}`
+}
+
 // ================== 远程 Shell Hook ==================
 
 /**
