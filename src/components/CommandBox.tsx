@@ -1,7 +1,7 @@
 import React from 'react'
 import { Box, Text } from 'ink'
 import { getCurrentTheme } from '../ui/theme.js'
-import { getDisplayWidth, wrapText } from '../utils/console.js'
+import { getDisplayWidth, wrapText, MIN_COMMAND_BOX_WIDTH } from '../utils/console.js'
 
 interface CommandBoxProps {
   command: string
@@ -33,7 +33,7 @@ export const CommandBox: React.FC<CommandBoxProps> = ({ command, title = '生成
     ...wrappedLines.map((l) => getDisplayWidth(l)),
     titleWidth
   )
-  const boxWidth = Math.min(actualMaxWidth + 4, termWidth - 2)
+  const boxWidth = Math.max(MIN_COMMAND_BOX_WIDTH, Math.min(actualMaxWidth + 4, termWidth - 2))
 
   // 顶部边框：┌─ 生成命令 ─────┐
   const topPadding = boxWidth - titleWidth - 5

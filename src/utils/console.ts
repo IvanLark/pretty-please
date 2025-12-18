@@ -6,6 +6,9 @@ import { getCurrentTheme } from '../ui/theme.js'
  * 用于不需要 Ink 的场景，避免清屏和性能问题
  */
 
+// 命令框最小宽度（统一配置）
+export const MIN_COMMAND_BOX_WIDTH = 20
+
 // 获取当前主题颜色
 function getColors() {
   const theme = getCurrentTheme()
@@ -115,7 +118,7 @@ export function drawCommandBox(command: string, title: string = '生成命令'):
     ...wrappedLines.map((l) => getDisplayWidth(l)),
     titleWidth
   )
-  const boxWidth = Math.min(actualMaxWidth + 4, termWidth - 2)
+  const boxWidth = Math.max(MIN_COMMAND_BOX_WIDTH, Math.min(actualMaxWidth + 4, termWidth - 2))
 
   const topPadding = boxWidth - titleWidth - 5
   const topBorder = '┌─ ' + title + ' ' + '─'.repeat(Math.max(0, topPadding)) + '┐'

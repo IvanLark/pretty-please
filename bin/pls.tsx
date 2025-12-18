@@ -139,7 +139,7 @@ function executeCommand(command: string): Promise<{ exitCode: number; output: st
       ...wrappedLines.map((l) => console2.getDisplayWidth(l)),
       console2.getDisplayWidth('生成命令')
     )
-    const boxWidth = Math.min(actualMaxWidth + 4, termWidth - 2)
+    const boxWidth = Math.max(console2.MIN_COMMAND_BOX_WIDTH, Math.min(actualMaxWidth + 4, termWidth - 2))
     console2.printSeparator('输出', boxWidth)
 
     // 使用 bash 并启用 pipefail，确保管道中任何命令失败都能正确返回非零退出码
@@ -1712,7 +1712,7 @@ async function executeRemoteCommand(
     ...wrappedLines.map((l) => console2.getDisplayWidth(l)),
     console2.getDisplayWidth('生成命令')
   )
-  const boxWidth = Math.min(actualMaxWidth + 4, termWidth - 2)
+  const boxWidth = Math.max(console2.MIN_COMMAND_BOX_WIDTH, Math.min(actualMaxWidth + 4, termWidth - 2))
   console2.printSeparator(`远程输出 (${remoteName})`, boxWidth)
 
   try {
