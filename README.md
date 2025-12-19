@@ -7,7 +7,7 @@
 > `please 查看当前目录` — 就像在跟电脑说话一样自然
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/e06a562c-f899-41d2-8870-d38ebc249904" alt="Pretty Please Demo" width="800">
+  <img src="https://github.com/user-attachments/assets/aeebcac4-ee52-4b9d-b2c9-77c2930e7454" alt="Pretty Please Demo" width="800">
 </p>
 
 ## 这是啥？
@@ -54,7 +54,6 @@ Enumerating objects: 5, done.
 - **命令打错了？** 直接 `pls` 自动修复，像 thefuck 一样方便，但更智能
 - 记不住 `tar` 的一堆参数
 - 想批量处理文件但懒得写脚本
-- 需要在多台服务器上执行同样的操作
 - 想问问某个命令怎么用
 
 ## 能干啥？
@@ -86,8 +85,14 @@ npm i -g @yivan-lab/pretty-please
 # Linux / macOS
 curl -fsSL https://raw.githubusercontent.com/IvanLark/pretty-please/main/install.sh | bash
 
+# Linux / macOS（国内加速）
+curl -fsSL https://gh-proxy.org/https://raw.githubusercontent.com/IvanLark/pretty-please/main/install.sh | bash
+
 # Windows PowerShell
 irm https://raw.githubusercontent.com/IvanLark/pretty-please/main/install.ps1 | iex
+
+# Windows PowerShell（国内加速）
+irm https://gh-proxy.org/https://raw.githubusercontent.com/IvanLark/pretty-please/main/install.ps1 | iex
 ```
 
 支持平台：Linux (x64/arm64) / macOS (Intel/Apple Silicon) / Windows x64
