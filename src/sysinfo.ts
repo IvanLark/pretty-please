@@ -1,11 +1,17 @@
 import os from 'os'
 import fs from 'fs'
 import path from 'path'
-import { execSync } from 'child_process'
 import chalk from 'chalk'
 import { detectProjectContext, formatProjectContext, type ProjectContext } from './project-context.js'
 import { getConfig, CONFIG_DIR } from './config.js'
 import { getCurrentTheme } from './ui/theme.js'
+import {
+  detectShell,
+  getShellCapabilities,
+  commandExists,
+  batchCommandExists,
+  isWindows,
+} from './utils/platform.js'
 
 /**
  * 要检测的命令列表（45 个）
@@ -92,7 +98,19 @@ const CACHE_FILE = path.join(CONFIG_DIR, 'system_cache.json')
  * 检测系统包管理器
  */
 function detectPackageManager(): string {
-  const managers = [
+  // Windows 包管理器
+  if (isWindows()) {
+    const windowsManagers = ['winget', 'scoop', 'choco']
+    for (const mgr of windowsManagers) {
+      if (commandExists(mgr)) {
+        return mgr
+      }
+    }
+    return 'unknown'
+  }
+
+  // Unix 包管理器
+  const unixManagers = [
     { name: 'brew', command: 'brew' },
     { name: 'apt', command: 'apt-get' },
     { name: 'dnf', command: 'dnf' },
@@ -102,12 +120,9 @@ function detectPackageManager(): string {
     { name: 'apk', command: 'apk' },
   ]
 
-  for (const mgr of managers) {
-    try {
-      execSync(`which ${mgr.command}`, { stdio: 'ignore' })
+  for (const mgr of unixManagers) {
+    if (commandExists(mgr.command)) {
       return mgr.name
-    } catch {
-      // 继续检测下一个
     }
   }
 
@@ -115,44 +130,26 @@ function detectPackageManager(): string {
 }
 
 /**
- * 检测可用命令（批量优化版：< 20ms）
- * 分批检测，每批 20 个命令，避免命令行过长
+ * 检测可用命令（跨平台版本）
+ * 使用 platform 模块的 batchCommandExists 函数
  */
 function detectAvailableCommands(): string[] {
   const allCommands = Object.values(COMMANDS_TO_CHECK).flat()
-  const available: string[] = []
-  const batchSize = 20
-
-  for (let i = 0; i < allCommands.length; i += batchSize) {
-    const batch = allCommands.slice(i, i + batchSize)
-    // 使用子 shell 包装，确保不会因为部分命令失败而中断
-    const script = `(${batch
-      .map(cmd => `command -v ${cmd} >/dev/null 2>&1 && echo ${cmd}`)
-      .join('; ')}) 2>/dev/null || true`
-
-    try {
-      const result = execSync(script, {
-        stdio: 'pipe',
-        encoding: 'utf-8',
-        timeout: 500,  // 每批 500ms 超时
-      })
-      available.push(...result.trim().split('\n').filter(Boolean))
-    } catch {
-      // 这批失败，跳过
-    }
-  }
-
-  return available
+  return batchCommandExists(allCommands)
 }
 
 /**
  * 检测所有静态信息（纯同步，不需要 async）
  */
 function detectStaticInfo(): StaticSystemInfo {
+  // 使用 platform 模块检测 Shell
+  const shell = detectShell()
+  const capabilities = getShellCapabilities(shell)
+
   return {
     os: os.platform(),
     arch: os.arch(),
-    shell: process.env.SHELL || 'unknown',
+    shell: capabilities.displayName,
     user: os.userInfo().username,
     systemPackageManager: detectPackageManager(),
     availableCommands: detectAvailableCommands(),

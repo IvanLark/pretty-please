@@ -71,6 +71,11 @@ import {
   uninstallRemoteShellHook,
   getRemoteHookStatus,
 } from '../src/shell-hook.js'
+import {
+  buildShellExecConfig,
+  getDefaultShell,
+  isWindows,
+} from '../src/utils/platform.js'
 
 // 获取主题颜色的辅助函数
 function getThemeColors() {
@@ -174,18 +179,11 @@ function executeWithInherit(command: string): Promise<{ exitCode: number; output
     const boxWidth = Math.max(console2.MIN_COMMAND_BOX_WIDTH, Math.min(actualMaxWidth + 4, termWidth - 2))
     console2.printSeparator('输出', boxWidth)
 
-    const userShell = process.env.SHELL || '/bin/bash'
-
-    // 根据 shell 类型选择合适的命令前缀
-    let shellCommand = command
-    if (userShell.includes('bash') || userShell.includes('sh')) {
-      shellCommand = `set -o pipefail; ${command}`
-    } else if (userShell.includes('zsh')) {
-      shellCommand = `setopt pipefail; ${command}`
-    }
+    // 使用 platform 模块构建跨平台命令执行配置
+    const execConfig = buildShellExecConfig(command)
 
     // 使用 spawn + inherit（输出直接到终端）
-    const child = spawn(userShell, ['-c', shellCommand], {
+    const child = spawn(execConfig.shell, execConfig.args, {
       stdio: 'inherit',
       env: process.env,
     })
@@ -237,19 +235,10 @@ function executeCommand(command: string): Promise<{ exitCode: number; output: st
     const boxWidth = Math.max(console2.MIN_COMMAND_BOX_WIDTH, Math.min(actualMaxWidth + 4, termWidth - 2))
     console2.printSeparator('输出', boxWidth)
 
-    // 使用用户当前的 shell，确保命令在正确的环境中执行
-    const userShell = process.env.SHELL || '/bin/bash'
+    // 使用 platform 模块构建跨平台命令执行配置
+    const execConfig = buildShellExecConfig(command)
 
-    // 根据 shell 类型选择合适的命令前缀（启用 pipefail）
-    let shellCommand = command
-    if (userShell.includes('bash') || userShell.includes('sh')) {
-      shellCommand = `set -o pipefail; ${command}`
-    } else if (userShell.includes('zsh')) {
-      shellCommand = `setopt pipefail; ${command}`
-    }
-    // 其他 shell 不设置 pipefail（避免不兼容）
-
-    const child = exec(shellCommand, { shell: userShell })
+    const child = exec(execConfig.command, { shell: execConfig.shell })
 
     child.stdout?.on('data', (data) => {
       stdout += data

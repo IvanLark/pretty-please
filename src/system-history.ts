@@ -3,31 +3,47 @@ import path from 'path'
 import os from 'os'
 import { getConfig } from './config.js'
 import type { ShellHistoryItem } from './shell-hook.js'
+import { detectShell, getShellCapabilities } from './utils/platform.js'
 
 /**
  * 直接读取系统 shell 历史文件（类似 thefuck）
  * 用于没有安装 shell hook 的情况
  *
  * 限制：系统历史文件不记录退出码，所以 exit 字段都是 0
+ *
+ * 支持的 Shell：
+ * - Unix: zsh, bash, fish
+ * - Windows: PowerShell 5.x, PowerShell 7+ (通过 PSReadLine)
+ * - 不支持: CMD (无持久化历史)
  */
 export function getSystemShellHistory(): ShellHistoryItem[] {
-  const shell = process.env.SHELL || ''
-  const home = os.homedir()
+  const shell = detectShell()
+  const capabilities = getShellCapabilities(shell)
 
-  let historyFile: string
+  // 检查是否支持历史读取
+  if (!capabilities.supportsHistory || !capabilities.historyPath) {
+    return []
+  }
+
+  const historyFile = capabilities.historyPath
   let parser: (line: string) => ShellHistoryItem | null
 
-  if (shell.includes('zsh')) {
-    // zsh 历史文件
-    historyFile = process.env.HISTFILE || path.join(home, '.zsh_history')
-    parser = parseZshHistoryLine
-  } else if (shell.includes('bash')) {
-    // bash 历史文件
-    historyFile = process.env.HISTFILE || path.join(home, '.bash_history')
-    parser = parseBashHistoryLine
-  } else {
-    // 不支持的 shell
-    return []
+  switch (shell) {
+    case 'zsh':
+      parser = parseZshHistoryLine
+      break
+    case 'bash':
+      parser = parseBashHistoryLine
+      break
+    case 'fish':
+      parser = parseFishHistoryLine
+      break
+    case 'powershell5':
+    case 'powershell7':
+      parser = parsePowerShellHistoryLine
+      break
+    default:
+      return []
   }
 
   if (!fs.existsSync(historyFile)) {
@@ -87,6 +103,43 @@ function parseZshHistoryLine(line: string): ShellHistoryItem | null {
  * bash 历史文件默认不记录时间戳
  */
 function parseBashHistoryLine(line: string): ShellHistoryItem | null {
+  const cmd = line.trim()
+  if (cmd) {
+    return {
+      cmd,
+      exit: 0,  // 系统历史文件不记录退出码
+      time: new Date().toISOString(),
+    }
+  }
+  return null
+}
+
+/**
+ * 解析 Fish 历史行
+ * Fish 历史文件使用 YAML-like 格式:
+ * - cmd: ls -la
+ *   when: 1234567890
+ */
+function parseFishHistoryLine(line: string): ShellHistoryItem | null {
+  // Fish 历史格式比较特殊，这里简化处理
+  // 实际格式是多行的，这里只处理 cmd 行
+  const cmdMatch = line.match(/^- cmd:\s*(.+)$/)
+  if (cmdMatch) {
+    return {
+      cmd: cmdMatch[1].trim(),
+      exit: 0,
+      time: new Date().toISOString(),
+    }
+  }
+  return null
+}
+
+/**
+ * 解析 PowerShell 历史行
+ * PSReadLine 历史文件格式: 每行一条命令，纯文本
+ * 路径: %APPDATA%\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt
+ */
+function parsePowerShellHistoryLine(line: string): ShellHistoryItem | null {
   const cmd = line.trim()
   if (cmd) {
     return {

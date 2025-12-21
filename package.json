@@ -11,6 +11,10 @@
     "dev": "tsx bin/pls.tsx",
     "build": "tsc && node scripts/postbuild.js",
     "start": "node dist/bin/pls.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
     "link:dev": "mkdir -p ~/.local/bin && ln -sf \"$(pwd)/bin/pls.tsx\" ~/.local/bin/pls-dev && echo '✅ pls-dev 已链接到 ~/.local/bin/pls-dev'",
     "unlink:dev": "rm -f ~/.local/bin/pls-dev && echo '✅ pls-dev 已移除'",
     "prepublishOnly": "pnpm build"
@@ -74,8 +78,11 @@
     "@types/hast": "^3.0.4",
     "@types/node": "^25.0.2",
     "@types/react": "^19.2.7",
+    "@vitest/coverage-v8": "^4.0.16",
+    "@vitest/ui": "^4.0.16",
     "react-devtools-core": "^7.0.1",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16"
   }
 }

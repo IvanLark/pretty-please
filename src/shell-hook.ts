@@ -5,6 +5,10 @@ import chalk from 'chalk'
 import { CONFIG_DIR, getConfig, setConfigValue } from './config.js'
 import { getHistory } from './history.js'
 import { getCurrentTheme } from './ui/theme.js'
+import {
+  detectShell as platformDetectShell,
+  type ShellType as PlatformShellType,
+} from './utils/platform.js'
 
 // 获取主题颜色
 function getColors() {
@@ -24,8 +28,28 @@ const SHELL_HISTORY_FILE = path.join(CONFIG_DIR, 'shell_history.jsonl')
 const HOOK_START_MARKER = '# >>> pretty-please shell hook >>>'
 const HOOK_END_MARKER = '# <<< pretty-please shell hook <<<'
 
-// Shell 类型
+// Shell 类型（保持向后兼容，但内部使用更细分的类型）
 type ShellType = 'zsh' | 'bash' | 'powershell' | 'unknown'
+
+/**
+ * 将 platform 模块的 ShellType 转换为本地 ShellType
+ */
+function toLocalShellType(platformShell: PlatformShellType): ShellType {
+  switch (platformShell) {
+    case 'zsh':
+      return 'zsh'
+    case 'bash':
+      return 'bash'
+    case 'powershell5':
+    case 'powershell7':
+      return 'powershell'
+    case 'cmd':
+    case 'fish':
+    case 'unknown':
+    default:
+      return 'unknown'
+  }
+}
 
 /**
  * Shell 历史记录项
@@ -49,14 +73,17 @@ export interface HookStatus {
 
 /**
  * 检测当前 shell 类型
+ * 使用 platform 模块进行跨平台检测
  */
 export function detectShell(): ShellType {
-  const shell = process.env.SHELL || ''
-  if (shell.includes('zsh')) return 'zsh'
-  if (shell.includes('bash')) return 'bash'
-  // Windows PowerShell
-  if (process.platform === 'win32') return 'powershell'
-  return 'unknown'
+  const platformShell = platformDetectShell()
+
+  // CMD 不支持 Hook，提示用户
+  if (platformShell === 'cmd') {
+    return 'unknown'
+  }
+
+  return toLocalShellType(platformShell)
 }
 
 /**
@@ -189,15 +216,26 @@ ${HOOK_END_MARKER}
 
 /**
  * 生成 PowerShell hook 脚本
+ * 使用 PowerShell 原生路径处理，避免跨平台路径问题
  */
 function generatePowerShellHook(): string {
   const config = getConfig()
   const limit = config.shellHistoryLimit || 10  // 从配置读取
 
+  // 使用 PowerShell 原生路径变量，而不是嵌入 Node.js 路径
   return `
 ${HOOK_START_MARKER}
 # 记录命令到 pretty-please 历史
+# 使用 PowerShell 原生路径
+$Global:__PlsDir = Join-Path $env:USERPROFILE ".please"
+$Global:__PlsHistoryFile = Join-Path $Global:__PlsDir "shell_history.jsonl"
+$Global:__PlsStatsFile = Join-Path $Global:__PlsDir "command_stats.txt"
 $Global:__PlsLastCmd = ""
+
+# 确保目录存在
+if (-not (Test-Path $Global:__PlsDir)) {
+    New-Item -Path $Global:__PlsDir -ItemType Directory -Force | Out-Null
+}
 
 function __Pls_RecordCommand {
     $lastCmd = (Get-History -Count 1).CommandLine
@@ -208,26 +246,27 @@ function __Pls_RecordCommand {
         $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
         $escapedCmd = $lastCmd -replace '\\\\', '\\\\\\\\' -replace '"', '\\\\"'
         $json = "{\`"cmd\`":\`"$escapedCmd\`",\`"exit\`":$exitCode,\`"time\`":\`"$timestamp\`"}"
-        Add-Content -Path "${CONFIG_DIR}/shell_history.jsonl" -Value $json
+        Add-Content -Path $Global:__PlsHistoryFile -Value $json
         # 保持文件不超过 ${limit} 行（从配置读取）
-        $content = Get-Content "${CONFIG_DIR}/shell_history.jsonl" -Tail ${limit}
-        $content | Set-Content "${CONFIG_DIR}/shell_history.jsonl"
+        $content = Get-Content $Global:__PlsHistoryFile -Tail ${limit} -ErrorAction SilentlyContinue
+        if ($content) {
+            $content | Set-Content $Global:__PlsHistoryFile
+        }
 
-        # 新增：统计命令频率
+        # 统计命令频率
         $cmdName = $lastCmd -split ' ' | Select-Object -First 1
-        $statsFile = "${CONFIG_DIR}/command_stats.txt"
 
-        # 确保文件存在
-        if (-not (Test-Path $statsFile)) {
-            New-Item -Path $statsFile -ItemType File -Force | Out-Null
+        # 确保统计文件存在
+        if (-not (Test-Path $Global:__PlsStatsFile)) {
+            New-Item -Path $Global:__PlsStatsFile -ItemType File -Force | Out-Null
         }
 
         # 更新统计
-        $stats = Get-Content $statsFile -ErrorAction SilentlyContinue
+        $stats = Get-Content $Global:__PlsStatsFile -ErrorAction SilentlyContinue
         $found = $false
         $newStats = @()
         foreach ($line in $stats) {
-            if ($line -match "^$cmdName=(\d+)$") {
+            if ($line -match "^$cmdName=(\\d+)$") {
                 $count = [int]$matches[1] + 1
                 $newStats += "$cmdName=$count"
                 $found = $true
@@ -238,7 +277,7 @@ function __Pls_RecordCommand {
         if (-not $found) {
             $newStats += "$cmdName=1"
         }
-        $newStats | Set-Content $statsFile
+        $newStats | Set-Content $Global:__PlsStatsFile
     }
 }
 
@@ -279,6 +318,20 @@ export async function installShellHook(): Promise<boolean> {
 
   if (!configPath) {
     console.log(chalk.hex(colors.error)(`❌ 不支持的 shell 类型: ${shellType}`))
+
+    // CMD 特殊提示
+    if (shellType === 'unknown') {
+      const platformShell = platformDetectShell()
+      if (platformShell === 'cmd') {
+        console.log('')
+        console.log(chalk.hex(colors.warning)('⚠️  CMD 不支持 Shell Hook 功能'))
+        console.log(chalk.hex(colors.secondary)('建议使用 PowerShell 获得完整体验：'))
+        console.log(chalk.hex(colors.secondary)('  1. 按 Win 键搜索 "PowerShell"'))
+        console.log(chalk.hex(colors.secondary)('  2. 在 PowerShell 中运行 pls hook install'))
+        console.log('')
+      }
+    }
+
     return false
   }
 

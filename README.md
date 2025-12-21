@@ -74,6 +74,8 @@ Enumerating objects: 5, done.
 
 ## 安装
 
+注意：目前 pls 在 windows 端可能会有不兼容导致的 bug，如果遇到可以发 issue 反馈，谢谢
+
 **方式一：npm（推荐）**
 
 ```bash
