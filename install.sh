@@ -90,6 +90,14 @@ main() {
 
     # 构建下载 URL（支持新版本格式：pls-v{version}-{platform}.tar.gz）
     DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/pls-v${VERSION#v}-${PLATFORM}.tar.gz"
+
+    # 如果设置了 PROXY 环境变量，使用代理
+    if [ -n "$PROXY" ]; then
+        # 移除末尾的斜杠（如果有）
+        PROXY="${PROXY%/}"
+        DOWNLOAD_URL="${PROXY}/${DOWNLOAD_URL}"
+        info "使用代理: $PROXY"
+    fi
     info "下载地址: $DOWNLOAD_URL"
 
     # 创建安装目录

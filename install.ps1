@@ -55,11 +55,12 @@ function Main {
             Write-Success "架构: Windows x64"
         }
         "Arm64" {
-            $PLATFORM = "windows-arm64"
-            Write-Success "架构: Windows ARM64"
+            # Windows ARM64 可以通过仿真运行 x64 程序
+            $PLATFORM = "windows-x64"
+            Write-Success "架构: Windows ARM64 (将使用 x64 版本)"
         }
         default {
-            Write-Error "不支持的架构: $arch (支持 x64 和 ARM64)"
+            Write-Error "不支持的架构: $arch"
             exit 1
         }
     }
@@ -77,6 +78,13 @@ function Main {
     # 下载 URL（支持新版本格式：pls-v{version}-{platform}.exe）
     $VERSION_NO_V = $VERSION -replace '^v', ''
     $DOWNLOAD_URL = "https://github.com/$REPO/releases/download/$VERSION/pls-v${VERSION_NO_V}-${PLATFORM}.exe"
+
+    # 如果设置了 PROXY 环境变量，使用代理
+    if ($env:PROXY) {
+        $PROXY = $env:PROXY.TrimEnd('/')
+        $DOWNLOAD_URL = "$PROXY/$DOWNLOAD_URL"
+        Write-Info "使用代理: $PROXY"
+    }
     Write-Info "下载地址: $DOWNLOAD_URL"
 
     # 创建安装目录
