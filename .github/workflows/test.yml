@@ -16,10 +16,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         shell: [bash, pwsh]
-        exclude:
-          # Windows 不需要测试 bash（已经有 Git Bash）
-          # - os: windows-latest
-          #   shell: bash
 
     defaults:
       run:
