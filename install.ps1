@@ -14,8 +14,15 @@ function Write-Error { param($msg) Write-Host "[ERROR] " -ForegroundColor Red -N
 
 function Get-LatestVersion {
     # 使用 releases/latest 的重定向获取版本，避免 API 速率限制
+    $url = "https://github.com/$REPO/releases/latest"
+    # 如果设置了 PROXY，使用代理
+    if ($env:PROXY) {
+        $proxy = $env:PROXY.TrimEnd('/')
+        $url = "$proxy/$url"
+    }
+
     try {
-        $response = Invoke-WebRequest -Uri "https://github.com/$REPO/releases/latest" -MaximumRedirection 0 -ErrorAction SilentlyContinue -UseBasicParsing
+        $response = Invoke-WebRequest -Uri $url -MaximumRedirection 0 -ErrorAction SilentlyContinue -UseBasicParsing
     } catch {
         $response = $_.Exception.Response
     }
@@ -28,7 +35,7 @@ function Get-LatestVersion {
     }
 
     # 备用方案：解析页面
-    $html = Invoke-WebRequest -Uri "https://github.com/$REPO/releases/latest" -UseBasicParsing
+    $html = Invoke-WebRequest -Uri $url -UseBasicParsing
     if ($html.BaseResponse.ResponseUri -match '/tag/([^/]+)$') {
         return $matches[1]
     }
