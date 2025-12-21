@@ -5,6 +5,16 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { detectShell, type ShellType } from '../platform'
+import { execSync } from 'child_process'
+
+// Mock child_process 用于控制 commandExists 的行为
+vi.mock('child_process', () => ({
+  execSync: vi.fn(),
+  exec: vi.fn(),
+  spawn: vi.fn(),
+}))
+
+const mockExecSync = vi.mocked(execSync)
 
 describe('Shell Detection - Windows', () => {
   // 保存原始环境
@@ -12,6 +22,11 @@ describe('Shell Detection - Windows', () => {
   const originalEnv = { ...process.env }
 
   beforeEach(() => {
+    vi.clearAllMocks()
+    // 默认让 commandExists 返回 false（execSync 抛出错误）
+    mockExecSync.mockImplementation(() => {
+      throw new Error('Command not found')
+    })
     // 清空环境变量
     vi.stubGlobal('process', {
       ...process,

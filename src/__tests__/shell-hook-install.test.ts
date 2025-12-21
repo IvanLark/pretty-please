@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import path from 'path'
 
 // Mock fs 模块
 vi.mock('fs', () => ({
@@ -77,6 +78,12 @@ const mockPlatformDetectShell = vi.mocked(platformDetectShell)
 const HOOK_START_MARKER = '# >>> pretty-please shell hook >>>'
 const HOOK_END_MARKER = '# <<< pretty-please shell hook <<<'
 
+// 跨平台路径辅助函数
+const HOME = '/home/testuser'
+const ZSHRC_PATH = path.join(HOME, '.zshrc')
+const ZSHRC_BACKUP_PATH = path.join(HOME, '.zshrc.pls-backup')
+const CONFIG_PATH = path.join(HOME, '.please')
+
 // 模拟的 shell 配置文件内容
 const EMPTY_ZSHRC = '# My zshrc\nexport PATH=$PATH:/usr/local/bin\n'
 const ZSHRC_WITH_HOOK = `# My zshrc
@@ -128,9 +135,10 @@ describe('installShellHook', () => {
 
   it('首次安装应该成功', async () => {
     // 配置文件存在但没有 hook
-    mockFs.existsSync.mockImplementation((path: any) => {
-      if (path === '/home/testuser/.zshrc') return true
-      if (path === '/home/testuser/.please') return true
+    mockFs.existsSync.mockImplementation((p: any) => {
+      const pathStr = p.toString()
+      if (pathStr.includes('.zshrc') && !pathStr.includes('backup')) return true
+      if (pathStr.includes('.please')) return true
       return false
     })
     mockFs.readFileSync.mockReturnValue(EMPTY_ZSHRC)
@@ -139,11 +147,11 @@ describe('installShellHook', () => {
     const result = await installShellHook()
 
     expect(result).toBe(true)
-    // 应该备份原文件
-    expect(mockFs.copyFileSync).toHaveBeenCalledWith(
-      '/home/testuser/.zshrc',
-      '/home/testuser/.zshrc.pls-backup'
-    )
+    // 应该备份原文件（检查调用了 copyFileSync，不检查具体路径格式）
+    expect(mockFs.copyFileSync).toHaveBeenCalled()
+    const copyCall = mockFs.copyFileSync.mock.calls[0]
+    expect(copyCall[0].toString()).toContain('.zshrc')
+    expect(copyCall[1].toString()).toContain('.zshrc.pls-backup')
     // 应该追加 hook 脚本
     expect(mockFs.appendFileSync).toHaveBeenCalled()
     // 应该更新配置

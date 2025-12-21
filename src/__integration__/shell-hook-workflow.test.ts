@@ -188,6 +188,8 @@ describe('Shell Hook 完整安装流程', () => {
   })
 
   it('已安装时 getHookStatus 应该返回 installed: true', async () => {
+    // 确保使用 Unix 平台检测逻辑
+    Object.defineProperty(process, 'platform', { value: 'linux' })
     process.env.SHELL = '/bin/zsh'
     mockConfig.shellHook = true
     mockFs.existsSync.mockReturnValue(true)
