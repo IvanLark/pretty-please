@@ -13,34 +13,14 @@ function Write-Warn { param($msg) Write-Host "[WARN] " -ForegroundColor Yellow -
 function Write-Error { param($msg) Write-Host "[ERROR] " -ForegroundColor Red -NoNewline; Write-Host $msg }
 
 function Get-LatestVersion {
-    # 使用 releases/latest 的重定向获取版本，避免 API 速率限制
-    $url = "https://github.com/$REPO/releases/latest"
+    $url = "https://api.github.com/repos/$REPO/releases/latest"
     # 如果设置了 PROXY，使用代理
     if ($env:PROXY) {
         $proxy = $env:PROXY.TrimEnd('/')
         $url = "$proxy/$url"
     }
-
-    try {
-        $response = Invoke-WebRequest -Uri $url -MaximumRedirection 0 -ErrorAction SilentlyContinue -UseBasicParsing
-    } catch {
-        $response = $_.Exception.Response
-    }
-
-    if ($response.Headers.Location) {
-        $location = $response.Headers.Location
-        if ($location -match '/tag/([^/]+)$') {
-            return $matches[1]
-        }
-    }
-
-    # 备用方案：解析页面
-    $html = Invoke-WebRequest -Uri $url -UseBasicParsing
-    if ($html.BaseResponse.ResponseUri -match '/tag/([^/]+)$') {
-        return $matches[1]
-    }
-
-    throw "无法获取版本号"
+    $response = Invoke-WebRequest -Uri $url -UseBasicParsing | ConvertFrom-Json
+    return $response.tag_name
 }
 
 function Main {

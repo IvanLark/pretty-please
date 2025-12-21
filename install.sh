@@ -60,15 +60,14 @@ detect_platform() {
     esac
 }
 
-# 获取最新版本（通过重定向，避免 API 速率限制）
+# 获取最新版本
 get_latest_version() {
-    local url="https://github.com/${REPO}/releases/latest"
+    local url="https://api.github.com/repos/${REPO}/releases/latest"
     # 如果设置了 PROXY，使用代理
     if [ -n "$PROXY" ]; then
         url="${PROXY%/}/${url}"
     fi
-    # 使用 releases/latest 的重定向获取版本，不受 API 限制
-    curl -fsSI "$url" | grep -i '^location:' | sed -E 's/.*\/tag\/([^[:space:]]+).*/\1/' | tr -d '\r'
+    curl -fsSL "$url" | grep '"tag_name"' | sed 's/.*: "\(.*\)".*/\1/'
 }
 
 # 主安装流程
