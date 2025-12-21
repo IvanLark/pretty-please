@@ -1,6 +1,6 @@
 {
   "name": "@yivan-lab/pretty-please",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "AI 驱动的命令行工具，将自然语言转换为可执行的 Shell 命令",
   "type": "module",
   "bin": {
