@@ -98,7 +98,7 @@ irm https://raw.githubusercontent.com/IvanLark/pretty-please/main/install.ps1 | 
 irm https://gh-proxy.org/https://raw.githubusercontent.com/IvanLark/pretty-please/main/install.ps1 | iex
 ```
 
-支持平台：Linux (x64/arm64) / macOS (Intel/Apple Silicon) / Windows (x64/ARM64)
+支持平台：Linux (x64/arm64) / macOS (Intel/Apple Silicon) / Windows (x64)
 
 ## 快速开始
 

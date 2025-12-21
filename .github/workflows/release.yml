@@ -42,11 +42,7 @@ jobs:
             target: bun-windows-x64
             ext: exe
             platform: windows-x64
-          # Windows ARM64
-          - os: windows-latest
-            target: bun-windows-arm64
-            ext: exe
-            platform: windows-arm64
+          # 注意：Bun 暂不支持 bun-windows-arm64 编译目标
 
     runs-on: ${{ matrix.os }}
 
