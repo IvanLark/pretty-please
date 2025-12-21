@@ -13,13 +13,8 @@ function Write-Warn { param($msg) Write-Host "[WARN] " -ForegroundColor Yellow -
 function Write-Error { param($msg) Write-Host "[ERROR] " -ForegroundColor Red -NoNewline; Write-Host $msg }
 
 function Get-LatestVersion {
-    $url = "https://api.github.com/repos/$REPO/releases/latest"
-    # 如果设置了 PROXY，使用代理
-    if ($env:PROXY) {
-        $proxy = $env:PROXY.TrimEnd('/')
-        $url = "$proxy/$url"
-    }
-    $response = Invoke-WebRequest -Uri $url -UseBasicParsing | ConvertFrom-Json
+    # API 请求很小，直连 GitHub（代理通常不支持 api.github.com）
+    $response = Invoke-WebRequest -Uri "https://api.github.com/repos/$REPO/releases/latest" -UseBasicParsing | ConvertFrom-Json
     return $response.tag_name
 }
 

@@ -62,12 +62,8 @@ detect_platform() {
 
 # 获取最新版本
 get_latest_version() {
-    local url="https://api.github.com/repos/${REPO}/releases/latest"
-    # 如果设置了 PROXY，使用代理
-    if [ -n "$PROXY" ]; then
-        url="${PROXY%/}/${url}"
-    fi
-    curl -fsSL "$url" | grep '"tag_name"' | sed 's/.*: "\(.*\)".*/\1/'
+    # API 请求很小，直连 GitHub（代理通常不支持 api.github.com）
+    curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed 's/.*: "\(.*\)".*/\1/'
 }
 
 # 主安装流程
