@@ -21,32 +21,34 @@ jobs:
           - os: ubuntu-latest
             target: bun-linux-x64
             ext: tar.gz
+            platform: linux-x64
           # Linux ARM64
           - os: ubuntu-latest
             target: bun-linux-arm64
             ext: tar.gz
+            platform: linux-arm64
           # macOS ARM64 (Apple Silicon)
           - os: macos-latest
             target: bun-darwin-arm64
             ext: tar.gz
+            platform: darwin-arm64
           # macOS x64 (Intel)
           - os: macos-15
             target: bun-darwin-x64
             ext: tar.gz
+            platform: darwin-x64
           # Windows x64
           - os: windows-latest
             target: bun-windows-x64
             ext: exe
+            platform: windows-x64
           # Windows ARM64
           - os: windows-latest
             target: bun-windows-arm64
             ext: exe
+            platform: windows-arm64
 
     runs-on: ${{ matrix.os }}
-
-    defaults:
-      run:
-        shell: bash
 
     steps:
       - name: Checkout
@@ -60,8 +62,11 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Build binary
-        id: build
+      # ============ Linux/macOS Build ============
+      - name: Build binary (Linux/macOS)
+        if: runner.os != 'Windows'
+        id: build_unix
+        shell: bash
         run: |
           # 获取标签
           if [ "${{ github.event_name }}" = "release" ]; then
@@ -71,71 +76,85 @@ jobs:
           fi
 
           # 去除 v 前缀
-          VERSION=${TAG#v}
+          VERSION="${TAG#v}"
 
           # 生成文件名
-          case ${{ matrix.target }} in
-            bun-linux-x64)
-              ARTIFACT="pls-v${VERSION}-linux-x64"
-              ;;
-            bun-linux-arm64)
-              ARTIFACT="pls-v${VERSION}-linux-arm64"
-              ;;
-            bun-darwin-arm64)
-              ARTIFACT="pls-v${VERSION}-darwin-arm64"
-              ;;
-            bun-darwin-x64)
-              ARTIFACT="pls-v${VERSION}-darwin-x64"
-              ;;
-            bun-windows-x64)
-              ARTIFACT="pls-v${VERSION}-windows-x64.exe"
-              ;;
-            bun-windows-arm64)
-              ARTIFACT="pls-v${VERSION}-windows-arm64.exe"
-              ;;
-          esac
+          ARTIFACT="pls-v${VERSION}-${{ matrix.platform }}"
 
           echo "artifact=${ARTIFACT}" >> $GITHUB_OUTPUT
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
           # 构建
-          bun build ./bin/pls.tsx --compile --target=${{ matrix.target }} --outfile=${ARTIFACT}
+          bun build ./bin/pls.tsx --compile --target=${{ matrix.target }} --outfile="${ARTIFACT}"
 
-      - name: Copy LICENSE file (Linux/macOS only)
-        if: matrix.ext == 'tar.gz'
+      - name: Create tarball (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
         run: |
+          VERSION="${{ steps.build_unix.outputs.version }}"
+          ARTIFACT="${{ steps.build_unix.outputs.artifact }}"
+          TAR_NAME="${ARTIFACT}.tar.gz"
+
           # 检查是否有 LICENSE 文件
           if [ ! -f LICENSE ]; then
             echo "MIT License" > LICENSE
           fi
 
-      - name: Create tarball (Linux/macOS only)
-        if: matrix.ext == 'tar.gz'
-        run: |
-          VERSION=${{ steps.build.outputs.version }}
-          ARTIFACT=${{ steps.build.outputs.artifact }}
-          # 提取平台信息
-          PLATFORM=${ARTIFACT#pls-v${VERSION}-}
-          TAR_NAME="pls-v${VERSION}-${PLATFORM}"
           # 创建临时目录
-          mkdir -p "packaging"
+          mkdir -p packaging
+
           # 复制二进制和 LICENSE
-          cp ${ARTIFACT} packaging/pls
-          chmod +x packaging/pls
+          cp "${ARTIFACT}" packaging/pls
           cp LICENSE packaging/LICENSE
+
           # 打包为 tar.gz
-          tar -czf ${TAR_NAME}.tar.gz -C packaging pls LICENSE
+          tar -czf "${TAR_NAME}" -C packaging pls LICENSE
+
           # 清理
           rm -rf packaging
-          ls -lah ${TAR_NAME}.tar.gz
 
-      - name: Upload artifact
+          ls -lah "${TAR_NAME}"
+
+      - name: Upload artifact (Linux/macOS)
+        if: runner.os != 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.build.outputs.artifact }}
+          name: ${{ steps.build_unix.outputs.artifact }}
           path: |
-            ${{ steps.build.outputs.artifact }}
-            ${{ matrix.ext == 'tar.gz' && format('pls-v{0}-*.tar.gz', steps.build.outputs.version) || '' }}
+            ${{ steps.build_unix.outputs.artifact }}.tar.gz
+
+      # ============ Windows Build ============
+      - name: Build binary (Windows)
+        if: runner.os == 'Windows'
+        id: build_windows
+        shell: pwsh
+        run: |
+          # 获取标签
+          if ("${{ github.event_name }}" -eq "release") {
+            $TAG = "${{ github.event.release.tag_name }}"
+          } else {
+            $TAG = "${{ github.event.inputs.tag }}"
+          }
+
+          # 去除 v 前缀
+          $VERSION = $TAG.TrimStart('v')
+
+          # 生成文件名
+          $ARTIFACT = "pls-v${VERSION}-${{ matrix.platform }}.exe"
+
+          echo "artifact=${ARTIFACT}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          echo "version=${VERSION}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          # 构建
+          bun build ./bin/pls.tsx --compile --target=${{ matrix.target }} --outfile="${ARTIFACT}"
+
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.build_windows.outputs.artifact }}
+          path: |
+            ${{ steps.build_windows.outputs.artifact }}
 
   release:
     needs: build
