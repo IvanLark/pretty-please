@@ -18,8 +18,9 @@ export interface ProjectContext {
 
 /**
  * 检测项目上下文（优化版：< 30ms）
+ * 若未识别到任何特征，返回 null
  */
-export async function detectProjectContext(cwd: string): Promise<ProjectContext> {
+export async function detectProjectContext(cwd: string): Promise<ProjectContext | null> {
   const types: string[] = []
   let packageManager: string | undefined
   let git: ProjectContext['git'] | undefined
@@ -115,6 +116,16 @@ export async function detectProjectContext(cwd: string): Promise<ProjectContext>
 
   } catch (error) {
     // 检测失败，返回空上下文
+  }
+
+  const hasContext =
+    types.length > 0 ||
+    !!packageManager ||
+    !!git ||
+    (scripts && scripts.length > 0)
+
+  if (!hasContext) {
+    return null
   }
 
   return { types, packageManager, git, scripts }

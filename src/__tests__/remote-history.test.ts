@@ -572,6 +572,7 @@ describe('displayRemoteShellHistory', () => {
       stdout: shellHistory.join('\n'),
       stderr: '',
       exitCode: 0,
+      output: shellHistory.join('\n'),
     })
 
     const { displayRemoteShellHistory } = await resetRemoteHistoryModule()
@@ -597,6 +598,7 @@ describe('displayRemoteShellHistory', () => {
       stdout: '',
       stderr: '',
       exitCode: 0,
+      output: '',
     })
 
     const { displayRemoteShellHistory } = await resetRemoteHistoryModule()
@@ -631,6 +633,7 @@ describe('displayRemoteShellHistory', () => {
       stdout: shellHistory.join('\n'),
       stderr: '',
       exitCode: 0,
+      output: shellHistory.join('\n'),
     })
 
     const { displayRemoteShellHistory } = await resetRemoteHistoryModule()
@@ -658,7 +661,7 @@ describe('clearRemoteShellHistory', () => {
   })
 
   it('应该清空远程 Shell 历史', async () => {
-    mockSshExec.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 })
+    mockSshExec.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0, output: '' })
     mockFs.existsSync.mockReturnValue(true)
 
     const { clearRemoteShellHistory } = await resetRemoteHistoryModule()
@@ -688,7 +691,7 @@ describe('clearRemoteShellHistory', () => {
   })
 
   it('本地缓存不存在时不应该报错', async () => {
-    mockSshExec.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 })
+    mockSshExec.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0, output: '' })
     mockFs.existsSync.mockReturnValue(false)
 
     const { clearRemoteShellHistory } = await resetRemoteHistoryModule()
@@ -725,6 +728,7 @@ describe('fetchRemoteShellHistory', () => {
       stdout: shellHistoryLines.join('\n'),
       stderr: '',
       exitCode: 0,
+      output: shellHistoryLines.join('\n'),
     })
 
     const { fetchRemoteShellHistory } = await resetRemoteHistoryModule()
@@ -740,6 +744,7 @@ describe('fetchRemoteShellHistory', () => {
       stdout: '',
       stderr: 'error',
       exitCode: 1,
+      output: 'error',
     })
     // 本地缓存也不存在
     mockFs.existsSync.mockReturnValue(false)
@@ -760,6 +765,7 @@ describe('fetchRemoteShellHistory', () => {
       stdout: shellHistoryLines.join('\n'),
       stderr: '',
       exitCode: 0,
+      output: shellHistoryLines.join('\n'),
     })
 
     const { fetchRemoteShellHistory } = await resetRemoteHistoryModule()

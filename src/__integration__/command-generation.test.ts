@@ -347,6 +347,7 @@ describe('远程执行流程', () => {
       stdout: 'output',
       stderr: '',
       exitCode: 0,
+      output: 'output',
     })
 
     let savedHistory: any[] = []
