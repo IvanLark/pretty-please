@@ -47,11 +47,22 @@ function Main {
     # 检测架构
     Write-Info "检测系统架构..."
     $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
-    if ($arch -ne "X64") {
-        Write-Error "不支持的架构: $arch (仅支持 x64)"
-        exit 1
+
+    # 支持多种架构
+    switch ($arch) {
+        "X64" {
+            $PLATFORM = "windows-x64"
+            Write-Success "架构: Windows x64"
+        }
+        "Arm64" {
+            $PLATFORM = "windows-arm64"
+            Write-Success "架构: Windows ARM64"
+        }
+        default {
+            Write-Error "不支持的架构: $arch (支持 x64 和 ARM64)"
+            exit 1
+        }
     }
-    Write-Success "架构: Windows x64"
 
     # 获取版本
     Write-Info "获取最新版本..."
@@ -63,8 +74,9 @@ function Main {
     }
     Write-Success "版本: $VERSION"
 
-    # 下载 URL
-    $DOWNLOAD_URL = "https://github.com/$REPO/releases/download/$VERSION/pls-windows-x64.exe"
+    # 下载 URL（支持新版本格式：pls-v{version}-{platform}.exe）
+    $VERSION_NO_V = $VERSION -replace '^v', ''
+    $DOWNLOAD_URL = "https://github.com/$REPO/releases/download/$VERSION/pls-v${VERSION_NO_V}-${PLATFORM}.exe"
     Write-Info "下载地址: $DOWNLOAD_URL"
 
     # 创建安装目录

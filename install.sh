@@ -88,8 +88,8 @@ main() {
     fi
     success "版本: $VERSION"
 
-    # 构建下载 URL
-    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/pls-${PLATFORM}"
+    # 构建下载 URL（支持新版本格式：pls-v{version}-{platform}.tar.gz）
+    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/pls-v${VERSION#v}-${PLATFORM}.tar.gz"
     info "下载地址: $DOWNLOAD_URL"
 
     # 创建安装目录
@@ -98,18 +98,23 @@ main() {
         mkdir -p "$INSTALL_DIR"
     fi
 
-    # 下载二进制文件
+    # 下载并解压
     info "下载中..."
-    TMP_FILE=$(mktemp)
-    if ! curl -fsSL "$DOWNLOAD_URL" -o "$TMP_FILE"; then
-        rm -f "$TMP_FILE"
+    TMP_DIR=$(mktemp -d)
+    if ! curl -fsSL "$DOWNLOAD_URL" -o "${TMP_DIR}/archive.tar.gz"; then
+        rm -rf "$TMP_DIR"
         error "下载失败，请检查网络或稍后重试"
     fi
 
+    # 解压
+    info "解压中..."
+    tar -xzf "${TMP_DIR}/archive.tar.gz" -C "$TMP_DIR"
+
     # 安装
     info "安装到 $INSTALL_DIR/$BINARY_NAME"
-    mv "$TMP_FILE" "$INSTALL_DIR/$BINARY_NAME"
+    mv "${TMP_DIR}/pls" "$INSTALL_DIR/$BINARY_NAME"
     chmod +x "$INSTALL_DIR/$BINARY_NAME"
+    rm -rf "$TMP_DIR"
     success "安装完成!"
 
     # 检查 PATH

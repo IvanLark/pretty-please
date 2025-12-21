@@ -82,7 +82,7 @@ Enumerating objects: 5, done.
 npm i -g @yivan-lab/pretty-please
 ```
 
-**方式二：一键脚本（无需 Node.js）**
+**方式二：一键脚本（无需 Node.js，但是是 bun 打包的，体积比较大）**
 
 ```bash
 # Linux / macOS
@@ -98,7 +98,7 @@ irm https://raw.githubusercontent.com/IvanLark/pretty-please/main/install.ps1 | 
 irm https://gh-proxy.org/https://raw.githubusercontent.com/IvanLark/pretty-please/main/install.ps1 | iex
 ```
 
-支持平台：Linux (x64/arm64) / macOS (Intel/Apple Silicon) / Windows x64
+支持平台：Linux (x64/arm64) / macOS (Intel/Apple Silicon) / Windows (x64/ARM64)
 
 ## 快速开始
 

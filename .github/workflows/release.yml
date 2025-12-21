@@ -17,21 +17,30 @@ jobs:
     strategy:
       matrix:
         include:
+          # Linux x64
           - os: ubuntu-latest
             target: bun-linux-x64
-            artifact: pls-linux-x64
+            ext: tar.gz
+          # Linux ARM64
           - os: ubuntu-latest
             target: bun-linux-arm64
-            artifact: pls-linux-arm64
+            ext: tar.gz
+          # macOS ARM64 (Apple Silicon)
           - os: macos-latest
             target: bun-darwin-arm64
-            artifact: pls-darwin-arm64
+            ext: tar.gz
+          # macOS x64 (Intel)
           - os: macos-15
             target: bun-darwin-x64
-            artifact: pls-darwin-x64
+            ext: tar.gz
+          # Windows x64
           - os: windows-latest
             target: bun-windows-x64
-            artifact: pls-windows-x64.exe
+            ext: exe
+          # Windows ARM64
+          - os: windows-latest
+            target: bun-windows-arm64
+            ext: exe
 
     runs-on: ${{ matrix.os }}
 
@@ -48,14 +57,81 @@ jobs:
         run: bun install
 
       - name: Build binary
+        id: build
         run: |
-          bun build ./bin/pls.tsx --compile --target=${{ matrix.target }} --outfile=${{ matrix.artifact }}
+          # 获取标签
+          if [ "${{ github.event_name }}" = "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+          else
+            TAG="${{ github.event.inputs.tag }}"
+          fi
+
+          # 去除 v 前缀
+          VERSION=${TAG#v}
+
+          # 生成文件名
+          case ${{ matrix.target }} in
+            bun-linux-x64)
+              ARTIFACT="pls-v${VERSION}-linux-x64"
+              ;;
+            bun-linux-arm64)
+              ARTIFACT="pls-v${VERSION}-linux-arm64"
+              ;;
+            bun-darwin-arm64)
+              ARTIFACT="pls-v${VERSION}-darwin-arm64"
+              ;;
+            bun-darwin-x64)
+              ARTIFACT="pls-v${VERSION}-darwin-x64"
+              ;;
+            bun-windows-x64)
+              ARTIFACT="pls-v${VERSION}-windows-x64.exe"
+              ;;
+            bun-windows-arm64)
+              ARTIFACT="pls-v${VERSION}-windows-arm64.exe"
+              ;;
+          esac
+
+          echo "artifact=${ARTIFACT}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+          # 构建
+          bun build ./bin/pls.tsx --compile --target=${{ matrix.target }} --outfile=${ARTIFACT}
+
+      - name: Copy LICENSE file (Linux/macOS only)
+        if: matrix.ext == 'tar.gz'
+        run: |
+          # 检查是否有 LICENSE 文件
+          if [ ! -f LICENSE ]; then
+            echo "MIT License" > LICENSE
+          fi
+
+      - name: Create tarball (Linux/macOS only)
+        if: matrix.ext == 'tar.gz'
+        run: |
+          VERSION=${{ steps.build.outputs.version }}
+          ARTIFACT=${{ steps.build.outputs.artifact }}
+          # 提取平台信息
+          PLATFORM=${ARTIFACT#pls-v${VERSION}-}
+          TAR_NAME="pls-v${VERSION}-${PLATFORM}"
+          # 创建临时目录
+          mkdir -p "packaging"
+          # 复制二进制和 LICENSE
+          cp ${ARTIFACT} packaging/pls
+          chmod +x packaging/pls
+          cp LICENSE packaging/LICENSE
+          # 打包为 tar.gz
+          tar -czf ${TAR_NAME}.tar.gz -C packaging pls LICENSE
+          # 清理
+          rm -rf packaging
+          ls -lah ${TAR_NAME}.tar.gz
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
+          name: ${{ steps.build.outputs.artifact }}
+          path: |
+            ${{ steps.build.outputs.artifact }}
+            ${{ matrix.ext == 'tar.gz' && format('pls-v{0}-*.tar.gz', steps.build.outputs.version) || '' }}
 
   release:
     needs: build
@@ -69,7 +145,9 @@ jobs:
           merge-multiple: true
 
       - name: List binaries
-        run: ls -la binaries/
+        run: |
+          cd binaries
+          ls -lah
 
       - name: Get release tag
         id: tag
@@ -83,7 +161,8 @@ jobs:
       - name: Create checksums
         run: |
           cd binaries
-          sha256sum pls-* > checksums.txt
+          # 计算所有包的 SHA256
+          sha256sum *.tar.gz *.exe > checksums.txt
           cat checksums.txt
 
       - name: Upload to Release
@@ -91,9 +170,6 @@ jobs:
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           files: |
-            binaries/pls-linux-x64
-            binaries/pls-linux-arm64
-            binaries/pls-darwin-arm64
-            binaries/pls-darwin-x64
-            binaries/pls-windows-x64.exe
+            binaries/*.tar.gz
+            binaries/*.exe
             binaries/checksums.txt
