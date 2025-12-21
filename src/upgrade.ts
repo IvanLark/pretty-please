@@ -370,6 +370,11 @@ pause
 
     console2.muted('━'.repeat(40))
     console2.success(`升级成功: ${currentVersion} → ${latestVersion}`)
+
+    // 升级成功后，重装 shell hook（如果已启用）
+    const { reinstallShellHook } = await import('./shell-hook.js')
+    await reinstallShellHook({ reason: '版本升级，更新 Shell Hook 脚本' })
+
     console.log('')
 
     return true

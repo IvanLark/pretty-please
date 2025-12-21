@@ -1,7 +1,7 @@
 import { Agent } from '@mastra/core'
 import { getConfig } from './config.js'
 import { CHAT_SYSTEM_PROMPT, buildChatUserContext } from './prompts.js'
-import { formatSystemInfo } from './sysinfo.js'
+import { formatSystemInfo, getSystemInfo } from './sysinfo.js'
 import { formatHistoryForAI } from './history.js'
 import { formatShellHistoryForAI, getShellHistory } from './shell-hook.js'
 import { getChatHistory, addChatMessage } from './chat-history.js'
@@ -71,19 +71,24 @@ export async function chatWithMastra(
   }
 
   // 3. 构建最新消息（动态上下文 + 用户问题）
-  const sysinfo = formatSystemInfo()
+  const sysinfo = formatSystemInfo(await getSystemInfo())
   const plsHistory = formatHistoryForAI()
   // 使用统一的历史获取接口（自动降级到系统历史）
   const { formatShellHistoryForAIWithFallback } = await import('./shell-hook.js')
   const shellHistory = formatShellHistoryForAIWithFallback()
   const shellHookEnabled = !!shellHistory  // 如果有 shell 历史就视为启用
 
+  // 获取用户偏好
+  const { formatUserPreferences } = await import('./user-preferences.js')
+  const userPreferencesStr = formatUserPreferences()
+
   const latestUserContext = buildChatUserContext(
     prompt,
     sysinfo,
     plsHistory,
     shellHistory,
-    shellHookEnabled
+    shellHookEnabled,
+    userPreferencesStr
   )
 
   messages.push(latestUserContext)

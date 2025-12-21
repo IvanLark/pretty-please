@@ -12,7 +12,8 @@ function getColors() {
     primary: theme.primary,
     secondary: theme.secondary,
     success: theme.success,
-    error: theme.error
+    error: theme.error,
+    warning: theme.warning,
   }
 }
 
@@ -82,11 +83,13 @@ export interface Config {
   chatHistoryLimit: number
   commandHistoryLimit: number
   shellHistoryLimit: number
+  userPreferencesTopK: number          // 用户偏好显示的命令数量（默认 20）
   editMode: EditMode
   theme: ThemeName
   aliases: Record<string, AliasConfig>
   remotes: Record<string, RemoteConfig>  // 远程服务器配置
   defaultRemote?: string                  // 默认远程服务器名称
+  systemCacheExpireDays?: number          // 系统信息缓存过期天数（默认 7 天）
 }
 
 /**
@@ -101,11 +104,13 @@ const DEFAULT_CONFIG: Config = {
   chatHistoryLimit: 5,
   commandHistoryLimit: 5,
   shellHistoryLimit: 10,
+  userPreferencesTopK: 20,  // 默认显示 Top 20
   editMode: 'manual',
   theme: 'dark',
   aliases: {},
   remotes: {},
   defaultRemote: '',
+  systemCacheExpireDays: 7,
 }
 
 /**
@@ -169,7 +174,7 @@ export function setConfigValue(key: string, value: string | boolean | number): C
   // 处理特殊类型
   if (key === 'shellHook') {
     config.shellHook = value === 'true' || value === true
-  } else if (key === 'chatHistoryLimit' || key === 'commandHistoryLimit' || key === 'shellHistoryLimit') {
+  } else if (key === 'chatHistoryLimit' || key === 'commandHistoryLimit' || key === 'shellHistoryLimit' || key === 'userPreferencesTopK' || key === 'systemCacheExpireDays') {
     const num = typeof value === 'number' ? value : parseInt(String(value), 10)
     if (isNaN(num) || num < 1) {
       throw new Error(`${key} 必须是大于 0 的整数`)
@@ -246,6 +251,10 @@ export function displayConfig(): void {
   console.log(`  ${chalk.hex(colors.primary)('chatHistoryLimit')}:    ${config.chatHistoryLimit} 轮`)
   console.log(`  ${chalk.hex(colors.primary)('commandHistoryLimit')}: ${config.commandHistoryLimit} 条`)
   console.log(`  ${chalk.hex(colors.primary)('shellHistoryLimit')}:   ${config.shellHistoryLimit} 条`)
+  console.log(`  ${chalk.hex(colors.primary)('userPreferencesTopK')}: ${config.userPreferencesTopK} 个`)
+  if (config.systemCacheExpireDays !== undefined) {
+    console.log(`  ${chalk.hex(colors.primary)('systemCacheExpireDays')}: ${config.systemCacheExpireDays} 天`)
+  }
 
   // 动态显示主题信息
   const themeMetadata = getAllThemeMetadata().find((m) => m.name === config.theme)
@@ -354,6 +363,8 @@ export async function runConfigWizard(): Promise<void> {
       const num = parseInt(chatHistoryLimit.trim(), 10)
       if (!isNaN(num) && num > 0) {
         config.chatHistoryLimit = num
+      } else {
+        console.log(chalk.hex(colors.warning)('  ⚠️  输入无效，保持原值'))
       }
     }
 
@@ -364,6 +375,8 @@ export async function runConfigWizard(): Promise<void> {
       const num = parseInt(commandHistoryLimit.trim(), 10)
       if (!isNaN(num) && num > 0) {
         config.commandHistoryLimit = num
+      } else {
+        console.log(chalk.hex(colors.warning)('  ⚠️  输入无效，保持原值'))
       }
     }
 
@@ -375,6 +388,20 @@ export async function runConfigWizard(): Promise<void> {
       const num = parseInt(shellHistoryLimit.trim(), 10)
       if (!isNaN(num) && num > 0) {
         config.shellHistoryLimit = num
+      } else {
+        console.log(chalk.hex(colors.warning)('  ⚠️  输入无效，保持原值'))
+      }
+    }
+
+    // 10. User Preferences Top K
+    const userPrefsPrompt = `${chalk.hex(colors.primary)('用户偏好显示命令数')}\n${chalk.gray('默认:')} ${chalk.hex(colors.secondary)(config.userPreferencesTopK)} ${chalk.gray('→')} `
+    const userPrefsTopK = await question(rl, userPrefsPrompt)
+    if (userPrefsTopK.trim()) {
+      const num = parseInt(userPrefsTopK.trim(), 10)
+      if (!isNaN(num) && num > 0) {
+        config.userPreferencesTopK = num
+      } else {
+        console.log(chalk.hex(colors.warning)('  ⚠️  输入无效，保持原值'))
       }
     }
 

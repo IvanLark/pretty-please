@@ -3,13 +3,8 @@ import { Box, Text } from 'ink'
 import Spinner from 'ink-spinner'
 import { MarkdownDisplay } from './MarkdownDisplay.js'
 import { chatWithMastra } from '../mastra-chat.js'
-import { getChatRoundCount, getChatHistory } from '../chat-history.js'
+import { getChatRoundCount } from '../chat-history.js'
 import { getCurrentTheme } from '../ui/theme.js'
-import { formatSystemInfo } from '../sysinfo.js'
-import { formatHistoryForAI } from '../history.js'
-import { formatShellHistoryForAI, getShellHistory } from '../shell-hook.js'
-import { getConfig } from '../config.js'
-import { CHAT_SYSTEM_PROMPT, buildChatUserContext } from '../prompts.js'
 
 interface ChatProps {
   prompt: string
@@ -38,34 +33,7 @@ export function Chat({ prompt, debug, showRoundCount, onComplete }: ChatProps) {
   const [content, setContent] = useState('')
   const [duration, setDuration] = useState(0)
   const [roundCount] = useState(getChatRoundCount())
-
-  // Debug 信息：直接在 useState 初始化时计算（同步）
-  const [debugInfo] = useState<DebugInfo | null>(() => {
-    if (!debug) return null
-
-    const config = getConfig()
-    const sysinfo = formatSystemInfo()
-    const plsHistory = formatHistoryForAI()
-    const shellHistory = formatShellHistoryForAI()
-    const shellHookEnabled = config.shellHook && getShellHistory().length > 0
-    const chatHistory = getChatHistory()
-
-    const userContext = buildChatUserContext(
-      prompt,
-      sysinfo,
-      plsHistory,
-      shellHistory,
-      shellHookEnabled
-    )
-
-    return {
-      sysinfo,
-      model: config.model,
-      systemPrompt: CHAT_SYSTEM_PROMPT,
-      userContext,
-      chatHistory,
-    }
-  })
+  const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null)
 
   useEffect(() => {
     const startTime = Date.now()
@@ -76,12 +44,17 @@ export function Chat({ prompt, debug, showRoundCount, onComplete }: ChatProps) {
       setContent((prev) => prev + chunk)
     }
 
-    // 调用 AI
-    chatWithMastra(prompt, { debug: false, onChunk })  // 不需要 AI 返回 debug
+    // 调用 AI（如果需要 debug 信息，则开启）
+    chatWithMastra(prompt, { debug, onChunk })
       .then((result) => {
         const endTime = Date.now()
         setDuration(endTime - startTime)
         setStatus('done')
+
+        // 如果有 debug 信息，保存它
+        if (result.debug) {
+          setDebugInfo(result.debug)
+        }
 
         setTimeout(onComplete, debug ? 500 : 100)
       })
@@ -95,7 +68,7 @@ export function Chat({ prompt, debug, showRoundCount, onComplete }: ChatProps) {
   return (
     <Box flexDirection="column">
       {/* 调试信息 - 放在最前面 */}
-      {debugInfo && (
+      {debug && debugInfo && (
         <Box flexDirection="column" marginBottom={1}>
           <Text color={theme.accent} bold>━━━ 调试信息 ━━━</Text>
           <Text color={theme.text.secondary}>模型: {debugInfo.model}</Text>

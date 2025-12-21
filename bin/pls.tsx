@@ -3,7 +3,7 @@ import { Command } from 'commander'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import path from 'path'
-import { exec } from 'child_process'
+import { exec, spawn } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import chalk from 'chalk'
@@ -12,7 +12,7 @@ import chalk from 'chalk'
 // import { render } from 'ink'
 // import { MultiStepCommandGenerator } from '../src/components/MultiStepCommandGenerator.js'
 // import { Chat } from '../src/components/Chat.js'
-import { isConfigValid, setConfigValue, getConfig, maskApiKey } from '../src/config.js'
+import { isConfigValid, setConfigValue, getConfig, maskApiKey, displayConfig } from '../src/config.js'
 import { clearHistory, addHistory, getHistory, getHistoryFilePath } from '../src/history.js'
 import { clearChatHistory, getChatRoundCount, getChatHistoryFilePath, displayChatHistory } from '../src/chat-history.js'
 import { type ExecutedStep } from '../src/multi-step.js'
@@ -50,6 +50,12 @@ import {
   generateBatchRemoteCommands,
   executeBatchRemoteCommands,
 } from '../src/remote.js'
+import { getSystemInfo, formatSystemInfo, refreshSystemCache, displaySystemInfo } from '../src/sysinfo.js'
+import {
+  displayCommandStats,
+  clearCommandStats,
+  getStatsFilePath,
+} from '../src/user-preferences.js'
 import {
   addRemoteHistory,
   displayRemoteHistory,
@@ -117,9 +123,98 @@ process.on('beforeExit', () => {
 })
 
 /**
+ * 需要 TTY 的工具白名单
+ * 这些工具在 pipe 模式下可能会卡住或无输出
+ */
+const TTY_REQUIRED_COMMANDS = new Set([
+  // ls 替代品（带图标/颜色）
+  'eza', 'exa', 'lsd',
+  // cat 替代品（带语法高亮）
+  'bat', 'batcat',
+  // diff 替代品
+  'delta', 'diff-so-fancy',
+  // 系统监控
+  'htop', 'btop', 'top', 'glances', 'gtop', 'bpytop',
+  // 编辑器
+  'vim', 'nvim', 'nano', 'emacs', 'micro', 'helix', 'hx',
+  // 分页器
+  'less', 'more', 'most',
+  // 模糊搜索
+  'fzf', 'skim', 'sk',
+  // 终端复用器
+  'tmux', 'screen', 'zellij',
+  // TUI 工具
+  'lazygit', 'lazydocker', 'lazysql', 'k9s', 'tig',
+  // 文件管理器
+  'nnn', 'ranger', 'lf', 'yazi', 'mc', 'vifm',
+  // 数据查看
+  'visidata', 'vd',
+])
+
+/**
+ * 使用 inherit 模式执行命令（用于需要 TTY 的工具）
+ * 特点：命令能正常执行，但无法捕获输出
+ */
+function executeWithInherit(command: string): Promise<{ exitCode: number; output: string; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    console.log('') // 空行
+
+    // 计算命令框宽度
+    const termWidth = process.stdout.columns || 80
+    const maxContentWidth = termWidth - 6
+    const lines = command.split('\n')
+    const wrappedLines: string[] = []
+    for (const line of lines) {
+      wrappedLines.push(...console2.wrapText(line, maxContentWidth))
+    }
+    const actualMaxWidth = Math.max(
+      ...wrappedLines.map((l) => console2.getDisplayWidth(l)),
+      console2.getDisplayWidth('生成命令')
+    )
+    const boxWidth = Math.max(console2.MIN_COMMAND_BOX_WIDTH, Math.min(actualMaxWidth + 4, termWidth - 2))
+    console2.printSeparator('输出', boxWidth)
+
+    const userShell = process.env.SHELL || '/bin/bash'
+
+    // 根据 shell 类型选择合适的命令前缀
+    let shellCommand = command
+    if (userShell.includes('bash') || userShell.includes('sh')) {
+      shellCommand = `set -o pipefail; ${command}`
+    } else if (userShell.includes('zsh')) {
+      shellCommand = `setopt pipefail; ${command}`
+    }
+
+    // 使用 spawn + inherit（输出直接到终端）
+    const child = spawn(userShell, ['-c', shellCommand], {
+      stdio: 'inherit',
+      env: process.env,
+    })
+
+    child.on('close', (code) => {
+      console2.printSeparator('', boxWidth)
+      resolve({ exitCode: code || 0, output: '', stdout: '', stderr: '' })
+    })
+
+    child.on('error', (err) => {
+      console2.printSeparator('', boxWidth)
+      console2.error(err.message)
+      resolve({ exitCode: 1, output: err.message, stdout: '', stderr: err.message })
+    })
+  })
+}
+
+/**
  * 执行命令（原生版本）
  */
 function executeCommand(command: string): Promise<{ exitCode: number; output: string; stdout: string; stderr: string }> {
+  // 检测是否是需要 TTY 的工具
+  const firstCmd = command.trim().split(/[\s|&;]/)[0]
+  if (TTY_REQUIRED_COMMANDS.has(firstCmd)) {
+    // 使用 inherit 模式执行（无法捕获输出，但能正常运行）
+    return executeWithInherit(command)
+  }
+
+  // 普通命令：使用 pipe 模式（捕获输出）
   return new Promise((resolve) => {
     let stdout = ''
     let stderr = ''
@@ -142,8 +237,19 @@ function executeCommand(command: string): Promise<{ exitCode: number; output: st
     const boxWidth = Math.max(console2.MIN_COMMAND_BOX_WIDTH, Math.min(actualMaxWidth + 4, termWidth - 2))
     console2.printSeparator('输出', boxWidth)
 
-    // 使用 bash 并启用 pipefail，确保管道中任何命令失败都能正确返回非零退出码
-    const child = exec(`set -o pipefail; ${command}`, { shell: '/bin/bash' })
+    // 使用用户当前的 shell，确保命令在正确的环境中执行
+    const userShell = process.env.SHELL || '/bin/bash'
+
+    // 根据 shell 类型选择合适的命令前缀（启用 pipefail）
+    let shellCommand = command
+    if (userShell.includes('bash') || userShell.includes('sh')) {
+      shellCommand = `set -o pipefail; ${command}`
+    } else if (userShell.includes('zsh')) {
+      shellCommand = `setopt pipefail; ${command}`
+    }
+    // 其他 shell 不设置 pipefail（避免不兼容）
+
+    const child = exec(shellCommand, { shell: userShell })
 
     child.stdout?.on('data', (data) => {
       stdout += data
@@ -191,37 +297,7 @@ configCmd
   .alias('show')
   .description('查看当前配置')
   .action(() => {
-    const config = getConfig()
-    const CONFIG_FILE = join(os.homedir(), '.please', 'config.json')
-
-    console.log('')
-    console2.title('当前配置:')
-    console2.muted('━'.repeat(50))
-    console.log(`  ${chalk.hex(getThemeColors().primary)('apiKey')}:              ${maskApiKey(config.apiKey)}`)
-    console.log(`  ${chalk.hex(getThemeColors().primary)('baseUrl')}:             ${config.baseUrl}`)
-    console.log(`  ${chalk.hex(getThemeColors().primary)('provider')}:            ${config.provider}`)
-    console.log(`  ${chalk.hex(getThemeColors().primary)('model')}:               ${config.model}`)
-    console.log(
-      `  ${chalk.hex(getThemeColors().primary)('shellHook')}:           ${
-        config.shellHook ? chalk.hex(getThemeColors().success)('已启用') : chalk.gray('未启用')
-      }`
-    )
-    console.log(
-      `  ${chalk.hex(getThemeColors().primary)('editMode')}:            ${
-        config.editMode === 'auto' ? chalk.hex(getThemeColors().primary)('auto (自动编辑)') : chalk.gray('manual (按E编辑)')
-      }`
-    )
-    console.log(`  ${chalk.hex(getThemeColors().primary)('chatHistoryLimit')}:    ${config.chatHistoryLimit} 轮`)
-    console.log(`  ${chalk.hex(getThemeColors().primary)('commandHistoryLimit')}: ${config.commandHistoryLimit} 条`)
-    console.log(`  ${chalk.hex(getThemeColors().primary)('shellHistoryLimit')}:   ${config.shellHistoryLimit} 条`)
-    console.log(
-      `  ${chalk.hex(getThemeColors().primary)('theme')}:               ${
-        config.theme === 'dark' ? chalk.hex(getThemeColors().primary)('dark (深色)') : chalk.hex(getThemeColors().primary)('light (浅色)')
-      }`
-    )
-    console2.muted('━'.repeat(50))
-    console2.muted(`配置文件: ${CONFIG_FILE}`)
-    console.log('')
+    displayConfig()
   })
 
 configCmd
@@ -814,6 +890,59 @@ aliasCmd
 // 默认 alias 命令（显示列表）
 aliasCmd.action(() => {
   displayAliases()
+})
+
+// sysinfo 子命令
+const sysinfoCmd = program.command('sysinfo').description('管理系统信息')
+
+sysinfoCmd
+  .command('show')
+  .description('查看系统信息')
+  .action(async () => {
+    const info = await getSystemInfo()
+    displaySystemInfo(info)
+  })
+
+sysinfoCmd
+  .command('refresh')
+  .description('刷新系统信息缓存')
+  .action(() => {
+    console.log('')
+    refreshSystemCache()
+    console.log('')
+  })
+
+// 默认 sysinfo 命令（显示信息）
+sysinfoCmd.action(async () => {
+  const info = await getSystemInfo()
+  displaySystemInfo(info)
+})
+
+// prefs 子命令
+const prefsCmd = program.command('prefs').description('管理命令偏好统计')
+
+prefsCmd
+  .command('show')
+  .description('查看命令偏好统计')
+  .action(() => {
+    displayCommandStats()
+  })
+
+prefsCmd
+  .command('clear')
+  .description('清空偏好统计')
+  .action(() => {
+    const colors = getThemeColors()
+    clearCommandStats()
+    console.log('')
+    console.log(chalk.hex(colors.success)('✓ 已清空命令偏好统计'))
+    console.log(chalk.gray(`  统计文件: ${getStatsFilePath()}`))
+    console.log('')
+  })
+
+// 默认 prefs 命令（显示统计）
+prefsCmd.action(() => {
+  displayCommandStats()
 })
 
 // remote 子命令

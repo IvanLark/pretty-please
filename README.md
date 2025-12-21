@@ -65,6 +65,7 @@ Enumerating objects: 5, done.
 - **错误恢复重试** - 命令失败了 AI 会分析原因并调整策略
 
 **高级功能：**
+- **学习你的习惯** - 开启 Shell Hook 后，AI 会记住你常用的命令，下次优先用你习惯的工具
 - **远程执行** - 通过 SSH 在服务器上跑命令，支持批量（`-r server1,server2,server3`）
 - **对话模式** - `pls chat grep 怎么用`，随时问问题
 - **命令别名** - 把常用操作存成快捷方式
@@ -260,6 +261,22 @@ pls hook uninstall  # 卸载 hook
 
 支持 zsh / bash / PowerShell。
 
+**开了 Hook 后，pls 会学习你的命令习惯。** 比如你平时用 `eza` 而不是 `ls`，用 `bat` 而不是 `cat`，AI 生成命令时会优先用你习惯的工具。用得越多，AI 越懂你。
+
+```bash
+pls prefs           # 看看 AI 学到了什么
+pls prefs clear     # 清空偏好统计
+```
+
+### 系统信息
+
+查看当前系统信息（AI 生成命令时会参考这些）：
+
+```bash
+pls sysinfo         # 查看系统信息
+pls sysinfo refresh # 刷新缓存
+```
+
 ### 主题
 
 7 个内置主题 + 自定义主题：
@@ -375,6 +392,10 @@ pls history chat clear      # 清空对话
 pls hook install            # 安装
 pls hook status             # 状态
 pls hook uninstall          # 卸载
+
+# 偏好 & 系统
+pls prefs                   # 查看命令偏好
+pls sysinfo                 # 查看系统信息
 
 # 主题
 pls theme                   # 当前主题

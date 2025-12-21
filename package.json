@@ -55,6 +55,7 @@
     "chalk": "^5.6.2",
     "cli-highlight": "^2.1.11",
     "commander": "^14.0.2",
+    "detect-package-manager": "^3.0.2",
     "ink": "^6.5.1",
     "ink-box": "^2.0.0",
     "ink-markdown": "^1.0.4",

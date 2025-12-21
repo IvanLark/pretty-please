@@ -14,8 +14,11 @@ export const SHELL_COMMAND_SYSTEM_PROMPT = `你是一个专业的 shell 脚本�
 
 ### 📋 输入数据格式说明
 你会收到以下 XML 标签包裹的上下文信息：
-- <system_info>：用户的操作系统、Shell 类型、当前目录、包管理器等环境信息
+- <system_info>：用户的操作系统、Shell 类型、当前目录、包管理器、可用工具等环境信息
 - <command_history>：用户最近执行的命令历史（用于理解上下文引用，如"刚才的文件"、"上一个命令"）
+- <user_preferences>：**用户的命令使用偏好**（格式：命令名(使用次数)），帮助你了解用户习惯
+  - 例如：git(234), eza(156) 表示用户经常使用 git 和 eza 命令
+  - 生成命令时可参考偏好，但最终应结合任务需求和 <system_info> 综合判断
 - <execution_log>：**多步骤任务的关键信息**，记录了之前步骤的命令、退出码和输出结果
   - 如果存在此标签，说明这是一个多步骤任务
   - 必须检查每个 <step> 中的 <exit_code>，0=成功，非0=失败
@@ -29,6 +32,7 @@ export const SHELL_COMMAND_SYSTEM_PROMPT = `你是一个专业的 shell 脚本�
 4. 根据 <system_info> 中的信息选择合适的命令（如包管理器）
 5. 如果用户引用了之前的操作（如"刚才的"、"上一个"），请参考 <command_history>
 6. 绝对不要输出 pls 或 please 命令！
+7. **建议优先使用标准命令**（ls/find/grep/cat/ps）以确保兼容性和输出捕获，而不是使用 eza/bat/delta 等现代工具，除非用户明确要求使用相关工具，或者用户特别偏好使用相关工具。
 
 ### 📤 输出格式 - 非常重要
 
@@ -189,6 +193,7 @@ export function buildUserContextPrompt(
   userRequest: string,
   sysInfoStr: string,
   historyStr: string,
+  userPreferencesStr: string,
   executedSteps: Array<{ command: string; exitCode: number; output: string }>
 ): string {
   const parts: string[] = []
@@ -205,7 +210,14 @@ export function buildUserContextPrompt(
     parts.push(`</command_history>`)
   }
 
-  // 3. 执行日志（多步骤的核心，紧凑 XML 结构）
+  // 3. 用户偏好（如果有）
+  if (userPreferencesStr && userPreferencesStr.trim()) {
+    parts.push(`<user_preferences>`)
+    parts.push(userPreferencesStr)
+    parts.push(`</user_preferences>`)
+  }
+
+  // 4. 执行日志（多步骤的核心，紧凑 XML 结构）
   if (executedSteps && executedSteps.length > 0) {
     parts.push(`<execution_log>`)
     executedSteps.forEach((step, i) => {
@@ -230,7 +242,7 @@ export function buildUserContextPrompt(
     parts.push(`⚠️ 注意：请检查 <execution_log> 中最后一步的 <exit_code>。如果非 0，请分析 <output> 并修复命令。`)
   }
 
-  // 4. 用户需求
+  // 5. 用户需求
   parts.push(`<user_request>`)
   parts.push(userRequest)
   parts.push(`</user_request>`)
@@ -251,6 +263,7 @@ export const CHAT_SYSTEM_PROMPT = `你是一个命令行专家助手，帮助用
 - <system_info>：用户的操作系统、Shell 类型、当前目录等环境信息
 - <command_history>：用户最近通过 pls 执行的命令（用于理解上下文引用）
 - <shell_history>：用户最近在终端执行的所有命令（如果启用了 Shell Hook）
+- <user_preferences>：用户的命令使用偏好（命令名(使用次数)），帮助你了解用户习惯
 - <user_question>：用户的具体问题
 
 ### 🎯 你的能力
@@ -283,7 +296,8 @@ export function buildChatUserContext(
   sysInfoStr: string,
   plsHistory: string,
   shellHistory: string,
-  shellHookEnabled: boolean
+  shellHookEnabled: boolean,
+  userPreferencesStr?: string
 ): string {
   const parts: string[] = []
 
@@ -303,7 +317,14 @@ export function buildChatUserContext(
     parts.push('</command_history>')
   }
 
-  // 3. 用户问题
+  // 3. 用户偏好（如果有）
+  if (userPreferencesStr && userPreferencesStr.trim()) {
+    parts.push('<user_preferences>')
+    parts.push(userPreferencesStr)
+    parts.push('</user_preferences>')
+  }
+
+  // 4. 用户问题
   parts.push('<user_question>')
   parts.push(userQuestion)
   parts.push('</user_question>')

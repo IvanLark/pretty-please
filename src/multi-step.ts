@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { createShellAgent } from './mastra-agent.js'
 import { SHELL_COMMAND_SYSTEM_PROMPT, buildUserContextPrompt } from './prompts.js'
-import { formatSystemInfo } from './sysinfo.js'
+import { formatSystemInfo, getSystemInfo } from './sysinfo.js'
 import { formatHistoryForAI } from './history.js'
 import { formatShellHistoryForAI, getShellHistory } from './shell-hook.js'
 import { getConfig, type RemoteSysInfo } from './config.js'
@@ -74,7 +74,7 @@ export async function generateMultiStepCommand(
     historyStr = options.remoteContext.shellHistory.length > 0 ? shellHistory : plsHistory
   } else {
     // 本地执行：格式化本地系统信息和历史
-    sysinfoStr = formatSystemInfo()
+    sysinfoStr = formatSystemInfo(await getSystemInfo())
     const plsHistory = formatHistoryForAI()
     // 使用统一的历史获取接口（自动降级到系统历史）
     const { formatShellHistoryForAIWithFallback } = await import('./shell-hook.js')
@@ -82,11 +82,16 @@ export async function generateMultiStepCommand(
     historyStr = shellHistory || plsHistory  // 优先使用 shell 历史，降级到 pls 历史
   }
 
+  // 获取用户偏好
+  const { formatUserPreferences } = await import('./user-preferences.js')
+  const userPreferencesStr = formatUserPreferences()
+
   // 构建包含所有动态数据的 User Prompt（XML 格式）
   const userContextPrompt = buildUserContextPrompt(
     userPrompt,
     sysinfoStr,
     historyStr,
+    userPreferencesStr,
     previousSteps
   )
 

@@ -82,6 +82,36 @@ export function getShellConfigPath(shellType: ShellType): string | null {
 }
 
 /**
+ * 生成命令统计的公共 shell 函数
+ * 用于 zsh 和 bash，避免代码重复
+ */
+function generateStatFunction(): string {
+  return `
+# 统计命令频率（公共函数）
+__pls_record_stat() {
+  local cmd_name="$1"
+  local stats_file="${CONFIG_DIR}/command_stats.txt"
+
+  # 确保文件存在
+  touch "$stats_file"
+
+  # 更新统计（纯 shell 实现，不依赖 jq）
+  if grep -q "^$cmd_name=" "$stats_file" 2>/dev/null; then
+    # 命令已存在，次数 +1
+    local count=$(grep "^$cmd_name=" "$stats_file" | cut -d= -f2)
+    count=$((count + 1))
+    # macOS 和 Linux 的 sed -i 不同，使用临时文件
+    sed "s/^$cmd_name=.*/$cmd_name=$count/" "$stats_file" > "$stats_file.tmp" 2>/dev/null
+    mv "$stats_file.tmp" "$stats_file" 2>/dev/null
+  else
+    # 新命令，追加
+    echo "$cmd_name=1" >> "$stats_file"
+  fi
+}
+`
+}
+
+/**
  * 生成 zsh hook 脚本
  */
 function generateZshHook(): string {
@@ -91,6 +121,7 @@ function generateZshHook(): string {
   return `
 ${HOOK_START_MARKER}
 # 记录命令到 pretty-please 历史
+${generateStatFunction()}
 __pls_preexec() {
   __PLS_LAST_CMD="$1"
   __PLS_CMD_START=$(date +%s)
@@ -106,6 +137,11 @@ __pls_precmd() {
     echo "{\\"cmd\\":\\"$escaped_cmd\\",\\"exit\\":$exit_code,\\"time\\":\\"$timestamp\\"}" >> "${CONFIG_DIR}/shell_history.jsonl"
     # 保持文件不超过 ${limit} 行（从配置读取）
     tail -n ${limit} "${CONFIG_DIR}/shell_history.jsonl" > "${CONFIG_DIR}/shell_history.jsonl.tmp" && mv "${CONFIG_DIR}/shell_history.jsonl.tmp" "${CONFIG_DIR}/shell_history.jsonl"
+
+    # 统计命令频率
+    local cmd_name=$(echo "$__PLS_LAST_CMD" | awk '{print $1}')
+    __pls_record_stat "$cmd_name"
+
     unset __PLS_LAST_CMD
   fi
 }
@@ -127,6 +163,7 @@ function generateBashHook(): string {
   return `
 ${HOOK_START_MARKER}
 # 记录命令到 pretty-please 历史
+${generateStatFunction()}
 __pls_prompt_command() {
   local exit_code=$?
   local last_cmd=$(history 1 | sed 's/^ *[0-9]* *//')
@@ -136,6 +173,10 @@ __pls_prompt_command() {
     local escaped_cmd=$(echo "$last_cmd" | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g')
     echo "{\\"cmd\\":\\"$escaped_cmd\\",\\"exit\\":$exit_code,\\"time\\":\\"$timestamp\\"}" >> "${CONFIG_DIR}/shell_history.jsonl"
     tail -n ${limit} "${CONFIG_DIR}/shell_history.jsonl" > "${CONFIG_DIR}/shell_history.jsonl.tmp" && mv "${CONFIG_DIR}/shell_history.jsonl.tmp" "${CONFIG_DIR}/shell_history.jsonl"
+
+    # 统计命令频率
+    local cmd_name=$(echo "$last_cmd" | awk '{print $1}')
+    __pls_record_stat "$cmd_name"
   fi
 }
 
@@ -171,6 +212,33 @@ function __Pls_RecordCommand {
         # 保持文件不超过 ${limit} 行（从配置读取）
         $content = Get-Content "${CONFIG_DIR}/shell_history.jsonl" -Tail ${limit}
         $content | Set-Content "${CONFIG_DIR}/shell_history.jsonl"
+
+        # 新增：统计命令频率
+        $cmdName = $lastCmd -split ' ' | Select-Object -First 1
+        $statsFile = "${CONFIG_DIR}/command_stats.txt"
+
+        # 确保文件存在
+        if (-not (Test-Path $statsFile)) {
+            New-Item -Path $statsFile -ItemType File -Force | Out-Null
+        }
+
+        # 更新统计
+        $stats = Get-Content $statsFile -ErrorAction SilentlyContinue
+        $found = $false
+        $newStats = @()
+        foreach ($line in $stats) {
+            if ($line -match "^$cmdName=(\d+)$") {
+                $count = [int]$matches[1] + 1
+                $newStats += "$cmdName=$count"
+                $found = $true
+            } else {
+                $newStats += $line
+            }
+        }
+        if (-not $found) {
+            $newStats += "$cmdName=1"
+        }
+        $newStats | Set-Content $statsFile
     }
 }
 
@@ -518,10 +586,17 @@ export function displayShellHistory(): void {
 }
 
 /**
- * 当 shellHistoryLimit 变化时，自动重装 Hook
- * 返回是否成功重装
+ * 重新安装 Shell Hook（通用函数）
+ * 用于版本升级、配置变更等场景
+ *
+ * @param options.silent 是否静默模式（不输出日志）
+ * @param options.reason 重装原因（用于日志显示）
+ * @returns 是否成功重装
  */
-export async function reinstallHookForLimitChange(oldLimit: number, newLimit: number): Promise<boolean> {
+export async function reinstallShellHook(options?: {
+  silent?: boolean
+  reason?: string
+}): Promise<boolean> {
   const config = getConfig()
 
   // 只有在 hook 已启用时才重装
@@ -529,35 +604,53 @@ export async function reinstallHookForLimitChange(oldLimit: number, newLimit: nu
     return false
   }
 
+  const colors = getColors()
+  const { silent = false, reason } = options || {}
+
+  if (!silent) {
+    console.log('')
+    if (reason) {
+      console.log(chalk.hex(colors.primary)(reason))
+    }
+    console.log(chalk.hex(colors.primary)('正在更新 Shell Hook...'))
+  }
+
+  // 卸载旧版本，安装新版本
+  uninstallShellHook()
+  await installShellHook()
+
+  if (!silent) {
+    console.log('')
+    console.log(chalk.hex(colors.warning)('⚠️  请重启终端或运行以下命令使新配置生效:'))
+
+    const shellType = detectShell()
+    let configFile = '~/.zshrc'
+    if (shellType === 'bash') {
+      configFile = process.platform === 'darwin' ? '~/.bash_profile' : '~/.bashrc'
+    } else if (shellType === 'powershell') {
+      configFile = '~/Documents/PowerShell/Microsoft.PowerShell_profile.ps1'
+    }
+
+    console.log(chalk.gray(`  source ${configFile}`))
+    console.log('')
+  }
+
+  return true
+}
+
+/**
+ * 当 shellHistoryLimit 变化时，自动重装 Hook
+ * 返回是否成功重装
+ */
+export async function reinstallHookForLimitChange(oldLimit: number, newLimit: number): Promise<boolean> {
   // 值没有变化，不需要重装
   if (oldLimit === newLimit) {
     return false
   }
 
-  const colors = getColors()
-
-  console.log('')
-  console.log(chalk.hex(colors.primary)(`检测到 shellHistoryLimit 变化 (${oldLimit} → ${newLimit})`))
-  console.log(chalk.hex(colors.primary)('正在更新 Shell Hook...'))
-
-  uninstallShellHook()
-  await installShellHook()
-
-  console.log('')
-  console.log(chalk.hex(colors.warning)('⚠️  请重启终端或运行以下命令使新配置生效:'))
-
-  const shellType = detectShell()
-  let configFile = '~/.zshrc'
-  if (shellType === 'bash') {
-    configFile = process.platform === 'darwin' ? '~/.bash_profile' : '~/.bashrc'
-  } else if (shellType === 'powershell') {
-    configFile = '~/Documents/PowerShell/Microsoft.PowerShell_profile.ps1'
-  }
-
-  console.log(chalk.gray(`  source ${configFile}`))
-  console.log('')
-
-  return true
+  return reinstallShellHook({
+    reason: `检测到 shellHistoryLimit 变化 (${oldLimit} → ${newLimit})`,
+  })
 }
 
 /**
@@ -641,7 +734,7 @@ export function formatShellHistoryForAIWithFallback(): string {
   }
 
   // 格式化系统历史（简单格式，无详细信息）
-  const lines = history.map((item, index) => {
+  const lines = history.map((item: ShellHistoryItem, index: number) => {
     const status = item.exit === 0 ? '✓' : `✗ 退出码:${item.exit}`
     return `${index + 1}. ${item.cmd} ${status}`
   })
