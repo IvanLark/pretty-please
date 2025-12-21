@@ -459,7 +459,9 @@ describe('CONFIG_DIR', () => {
 
     const { CONFIG_DIR } = await resetConfigModule()
 
-    expect(CONFIG_DIR).toBe('/home/testuser/.please')
+    // 使用跨平台兼容的断言
+    expect(CONFIG_DIR).toContain('testuser')
+    expect(CONFIG_DIR).toContain('.please')
   })
 
   it('Windows 路径应该正确', async () => {

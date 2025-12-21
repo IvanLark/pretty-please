@@ -12,6 +12,11 @@ vi.mock('child_process', () => ({
   spawn: vi.fn(),
 }))
 
+// Mock system-history 模块
+vi.mock('../system-history.js', () => ({
+  getSystemShellHistory: vi.fn(() => []),
+}))
+
 // Mock fs 模块
 vi.mock('fs', () => ({
   default: {
@@ -414,6 +419,17 @@ describe('配置变更影响 Hook 行为', () => {
 // ============================================================================
 
 describe('Shell 类型检测', () => {
+  const originalPlatform = process.platform
+
+  beforeEach(() => {
+    // Stub process.platform 为 Linux（非 Windows）
+    Object.defineProperty(process, 'platform', { value: 'linux' })
+  })
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform })
+  })
+
   it('应该从 SHELL 环境变量检测 Zsh', async () => {
     process.env.SHELL = '/bin/zsh'
     const { shellHook } = await resetModules()

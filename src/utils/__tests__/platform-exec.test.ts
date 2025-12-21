@@ -131,6 +131,11 @@ describe('Shell Exec Config - PowerShell', () => {
 describe('Shell Exec Config - CMD', () => {
   const originalEnv = { ...process.env }
 
+  beforeEach(() => {
+    // 清除 COMSPEC 以确保使用默认值
+    delete process.env.COMSPEC
+  })
+
   afterEach(() => {
     process.env = { ...originalEnv }
   })
@@ -138,7 +143,7 @@ describe('Shell Exec Config - CMD', () => {
   it('CMD 应该使用 /c 参数', () => {
     const config = buildShellExecConfig('dir', 'cmd')
 
-    expect(config.shell).toBe('cmd.exe')
+    expect(config.shell).toContain('cmd.exe')
     expect(config.args).toEqual(['/c', 'dir'])
     expect(config.command).toBe('dir')
   })

@@ -4,6 +4,12 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+
+// Mock system-history 模块（必须在导入 shell-hook 之前）
+vi.mock('../system-history.js', () => ({
+  getSystemShellHistory: vi.fn(() => []),
+}))
+
 import { detectShell, getShellConfigPath } from '../shell-hook'
 import {
   createFsMock,
