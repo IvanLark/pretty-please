@@ -1,11 +1,14 @@
 # Pretty-Please (pls) Windows 安装脚本
 # 使用方法: irm https://raw.githubusercontent.com/IvanLark/pretty-please/main/install.ps1 | iex
+# 国内加速: irm https://dl.pretty-please.site/install.ps1 | iex
 
 $ErrorActionPreference = "Stop"
 
 $REPO = "IvanLark/pretty-please"
 $BINARY_NAME = "pls.exe"
 $INSTALL_DIR = "$env:LOCALAPPDATA\Programs\pls"
+# 下载源（GitHub 版本默认从 GitHub 下载，R2 版本会被替换为 R2 地址）
+$DOWNLOAD_BASE = "https://github.com/$REPO/releases/download"
 
 function Write-Info { param($msg) Write-Host "[INFO] " -ForegroundColor Cyan -NoNewline; Write-Host $msg }
 function Write-Success { param($msg) Write-Host "[OK] " -ForegroundColor Green -NoNewline; Write-Host $msg }
@@ -13,7 +16,6 @@ function Write-Warn { param($msg) Write-Host "[WARN] " -ForegroundColor Yellow -
 function Write-Error { param($msg) Write-Host "[ERROR] " -ForegroundColor Red -NoNewline; Write-Host $msg }
 
 function Get-LatestVersion {
-    # API 请求很小，直连 GitHub（代理通常不支持 api.github.com）
     $response = Invoke-WebRequest -Uri "https://api.github.com/repos/$REPO/releases/latest" -UseBasicParsing | ConvertFrom-Json
     return $response.tag_name
 }
@@ -57,16 +59,9 @@ function Main {
     }
     Write-Success "版本: $VERSION"
 
-    # 下载 URL（支持新版本格式：pls-v{version}-{platform}.exe）
+    # 构建下载 URL
     $VERSION_NO_V = $VERSION -replace '^v', ''
-    $DOWNLOAD_URL = "https://github.com/$REPO/releases/download/$VERSION/pls-v${VERSION_NO_V}-${PLATFORM}.exe"
-
-    # 如果设置了 PROXY 环境变量，使用代理
-    if ($env:PROXY) {
-        $PROXY = $env:PROXY.TrimEnd('/')
-        $DOWNLOAD_URL = "$PROXY/$DOWNLOAD_URL"
-        Write-Info "使用代理: $PROXY"
-    }
+    $DOWNLOAD_URL = "$DOWNLOAD_BASE/$VERSION/pls-v${VERSION_NO_V}-${PLATFORM}.exe"
     Write-Info "下载地址: $DOWNLOAD_URL"
 
     # 创建安装目录

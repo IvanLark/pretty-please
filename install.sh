@@ -1,12 +1,15 @@
 #!/bin/bash
 # Pretty-Please (pls) 安装脚本
 # 使用方法: curl -fsSL https://raw.githubusercontent.com/IvanLark/pretty-please/main/install.sh | bash
+# 国内加速: curl -fsSL https://dl.pretty-please.site/install.sh | bash
 
 set -e
 
 REPO="IvanLark/pretty-please"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 BINARY_NAME="pls"
+# 下载源（GitHub 版本默认从 GitHub 下载，R2 版本会被替换为 R2 地址）
+DOWNLOAD_BASE="https://github.com/${REPO}/releases/download"
 
 # 颜色
 RED='\033[0;31m'
@@ -62,7 +65,6 @@ detect_platform() {
 
 # 获取最新版本
 get_latest_version() {
-    # API 请求很小，直连 GitHub（代理通常不支持 api.github.com）
     curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed 's/.*: "\(.*\)".*/\1/'
 }
 
@@ -88,16 +90,8 @@ main() {
     fi
     success "版本: $VERSION"
 
-    # 构建下载 URL（支持新版本格式：pls-v{version}-{platform}.tar.gz）
-    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/pls-v${VERSION#v}-${PLATFORM}.tar.gz"
-
-    # 如果设置了 PROXY 环境变量，使用代理
-    if [ -n "$PROXY" ]; then
-        # 移除末尾的斜杠（如果有）
-        PROXY="${PROXY%/}"
-        DOWNLOAD_URL="${PROXY}/${DOWNLOAD_URL}"
-        info "使用代理: $PROXY"
-    fi
+    # 构建下载 URL
+    DOWNLOAD_URL="${DOWNLOAD_BASE}/${VERSION}/pls-v${VERSION#v}-${PLATFORM}.tar.gz"
     info "下载地址: $DOWNLOAD_URL"
 
     # 创建安装目录

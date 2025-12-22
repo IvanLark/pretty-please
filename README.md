@@ -89,13 +89,13 @@ npm i -g @yivan-lab/pretty-please
 curl -fsSL https://raw.githubusercontent.com/IvanLark/pretty-please/main/install.sh | bash
 
 # Linux / macOS（国内加速）
-curl -fsSL https://gh-proxy.org/https://raw.githubusercontent.com/IvanLark/pretty-please/main/install.sh | PROXY=https://gh-proxy.org bash
+curl -fsSL https://dl.pretty-please.site/install.sh | bash
 
 # Windows PowerShell
 irm https://raw.githubusercontent.com/IvanLark/pretty-please/main/install.ps1 | iex
 
 # Windows PowerShell（国内加速）
-$env:PROXY="https://gh-proxy.org"; irm https://gh-proxy.org/https://raw.githubusercontent.com/IvanLark/pretty-please/main/install.ps1 | iex
+irm https://dl.pretty-please.site/install.ps1 | iex
 ```
 
 支持平台：Linux (x64/arm64) / macOS (Intel/Apple Silicon) / Windows (x64)
